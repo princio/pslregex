@@ -1,11 +1,7 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-import os, datetime, time
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
-import re
 
-from regexer import getRegexes
+import pandas as pd
+import requests
+import re
 
 
 def getETLDframe():
@@ -77,8 +73,6 @@ def getETLDframe():
 
     df_tld = df[['tld', 'punycode', 'type', 'manager']].copy()
 
-
-
     psl_lines = psl_file
 
     sections_delimiters = [
@@ -86,6 +80,7 @@ def getETLDframe():
         '// newGTLDs',
         '// ===BEGIN PRIVATE DOMAINS==='
     ]
+    
     sections_names = [
         'icann',
         'icann-new',
@@ -165,10 +160,10 @@ def getETLDframe():
 
 
     mask = (df['type_tld'].isna() & df['punycode_psl'].isna())
-    df['type'].values[icann_pd] = 'other'
+    df['type'].values[mask] = 'other'
 
     mask = (df['type_tld'].isna() & (~df['punycode_psl'].isna()))
-    df['type'].values[icann_pd] = 'orphan-punycode'
+    df['type'].values[mask] = 'orphan-punycode'
 
     # Checking rows having both punycodes not null matches
     df_punycode = df[~(df.punycode_psl.isna()) & ~(df.punycode_tld.isna())]
@@ -209,70 +204,4 @@ def getETLDframe():
 
     df[df['origin'] != 'both'].to_csv('differents.csv')
 
-    return df.copy()
-
-class PSLRegex():
-    def __init__(self) -> None:
-        self.etldFrame = None#getETLDframe()
-        self.regexes = None #getRegexes(self.etldFrame)
-        pass
-
-    def parse(self):
-        self.etldFrame = getETLDframe()
-
-    def re(self):
-        self.regexes = getRegexes(self.etldFrame)
-
-    def single(self, dn):
-        dn = dn.split('.')[::-1]
-        tld = dn[0]
-        dn = '.'.join(dn)
-        try:
-            regex = self.regexes[tld]
-            start = time.time()
-            gd = regex.match(dn).groupdict()
-            gd = [ int(k[1:]) for k in gd if gd[k] is not None ]
-            end = time.time() - start
-        except AttributeError as e:
-            print('not found')
-
-        print(f'Found {len(gd)} solution/s in {end} sec')
-        return self.etldFrame.loc[gd[0]].to_markdown()
-
-    def frame(self, frame):
-        start = time.time()
-        dnRevertedSeries = frame.dn.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
-
-        def match(s):
-            if s[0] not in self.regexes:
-                return -1
-            gd = self.regexes[s[0]].match(s[1]).groupdict()
-            gd = [ int(k[1:]) for k in gd if gd[k] is not None ]
-            return gd[0] if len(gd) == 1 else gd
-
-        matchesSeries = dnRevertedSeries.apply(match)
-        mergeFrame = matchesSeries.to_frame().merge(self.etldFrame, left_on='dn', right_index=True, how='left').drop(columns='dn')
-        result = frame.dn.to_frame().join(mergeFrame).copy()
-        end = time.time() - start
-        print(f'Merged {frame.shape[0]} in {end} sec ({end/frame.shape[0]} sec/dn)')
-        return result
-    pass
-
-if __name__ == '__main__':
-    psl = PSLRegex()
-
-    psl.parse()
-    psl.re()
-
-    single = psl.single('google.co.uk')
-
-    datasetFrame = pd.read_csv('/home/princio/Desktop/malware_detection/nn/nn/dataset_training.csv')
-    datasetFrame['tld'] = datasetFrame.dn.apply(lambda dn: dn[1 + dn.rfind('.'):])
-
-    frame = psl.frame(datasetFrame)
-
-    print(single)
-
-    print(frame)
-
-    pass
+    return df.reset_index().rename(columns={'index': 'id'})

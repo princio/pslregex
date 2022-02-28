@@ -1,4 +1,4 @@
-import re
+import re, os
 import pandas as pd
 
 class Node:
@@ -10,6 +10,7 @@ class Node:
         self.children = []
         self.deep = deep
         self.fl = fl
+        self._debug = os.environ.get('DEBUG')
         pass
     
     def level(self):
@@ -69,10 +70,13 @@ class Node:
     def regex(self, indent='  '):
         groups = []
         
-        lindent = self.level() * indent
-        lindent2 = (1 + self.level()) * indent
+        if self._debug:
+            lindent = '\n' + self.level() * indent
+            lindent2 = '\n' + (1 + self.level()) * indent
+        else:
+            lindent = ''
+            lindent2 = ''
         
-        regex = ''
         for child in self.children:
             groups.append(child.regex(indent=indent))
         
@@ -96,7 +100,7 @@ class Node:
         if child_regex != '' and leaf != '':
             sep = '|'
         
-        return f'\n{lindent}({uncaptured}(\n{lindent2}{child_regex}\n{lindent2}){sep}{leaf})'
+        return f'{lindent}({uncaptured}({lindent2}{child_regex}{lindent2}){sep}{leaf})'
     
     pass
 
@@ -128,7 +132,7 @@ def fillTree(sfxOr, l, parent):
                 fillTree(sfx[(sfx[l] == branch) & (sfx[l+1] != '')], l+1, node)
         pass
 
-def getInvertedSuffixLabelSeries(df_etld):
+def invertedSuffixLabels(df_etld):
     sfx = df_etld.suffix.str.replace(r'*.', '', regex=False).copy()
     maxLabels_suffix = sfx.str.count('\.').max()
     sfx = sfx.apply(lambda s: ('@@.'*(maxLabels_suffix - s.count('.'))) + s).str.split('.', expand=True)
@@ -138,13 +142,17 @@ def getInvertedSuffixLabelSeries(df_etld):
     sfx['id'] = df_etld.reset_index()['index']
     return sfx.copy()
 
-def getRegexes(df_etld, tld=None):
-    sfx = getInvertedSuffixLabelSeries(df_etld)
+def getRegexes(df_etld):
+    sfx = invertedSuffixLabels(df_etld)
     regexes = {}
-    tlds = sfx[0].drop_duplicates() if tld is None else [ tld ]
+    tlds = sfx[0].drop_duplicates()
     for tld in tlds:
         tree = Node('root', deep=-1)
         fillTree(sfx[sfx[0] == tld], 0, tree)
         tree.compact()
-        regexes[tld] = re.compile(tree.regex(), re.VERBOSE)
+        if os.environ.get('DEBUG'):
+            regexes[tld] = re.compile(tree.regex(), re.VERBOSE)
+        else:
+            regexes[tld] = re.compile(tree.regex())
     return regexes
+
