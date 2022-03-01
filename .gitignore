@@ -1,2 +1,7 @@
 .ipynb_checkpoints
+*.csv
+*.json
 *.csv#
+
+pslregex.egg-info
+__pycache__
