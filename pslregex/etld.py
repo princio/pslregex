@@ -3,6 +3,29 @@ import pandas as pd
 import requests
 import re
 
+codes = {
+    'type': {
+        'country-code': 'cc',
+        'private-domains': 'pd',
+        'sponsored': 'sp',
+        'infrastructure': 'in',
+        'generic-restricted': 'gr',
+        'generic': 'ge',
+        'other': 'ot',
+        'orphan-punycode': 'op',
+        'test': 'te'
+    },
+    'origin': {
+        'both': 'b',
+        'merged': 'm',
+        'ICANN': 'i',
+        'PSL': 'p'
+    }
+}
+
+inv_codes = {}
+for t in [ 'type', 'origin' ]:
+    inv_codes[t] = {v: k for k, v in codes[t].items() }
 
 def getETLDframe():
     psl_file = requests.get(
@@ -141,7 +164,7 @@ def getETLDframe():
 
     df['origin'] = 'both'
     df['origin'].values[(~df['type_psl'].isna()) & (df['type_tld'].isna())] = 'PSL'
-    df['origin'].values[(~df['type_tld'].isna()) & (df['type_psl'].isna())] = 'TLDLIST'
+    df['origin'].values[(~df['type_tld'].isna()) & (df['type_psl'].isna())] = 'ICANN'
     df['origin'].values[(df['origin'] == 'both') & (df.tld != df.suffix)] = 'merged'
 
     df = df.reset_index(drop=True)
@@ -182,7 +205,6 @@ def getETLDframe():
         'manager_tld', 'manager_psl'
     ]]
 
-
     df.rename(columns={'type_tld': 'tld type', 'type_psl': 'suffix type'}, inplace=True)
     df.rename(columns={'manager_tld': 'tld manager', 'manager_psl': 'psl comment'}, inplace=True)
 
@@ -200,8 +222,14 @@ def getETLDframe():
 
     df = df.fillna('')
 
-    df.to_csv('tld_and_suffixes.csv')
+    df.to_csv('etld.csv')
 
     df[df['origin'] != 'both'].to_csv('differents.csv')
 
-    return df.reset_index().rename(columns={'index': 'id'})
+    df = df.reset_index().rename(columns={'index': 'id'})
+
+    df['code'] = df['origin'].apply(lambda o: codes['origin'][o]) \
+        + df.reset_index()['index'].apply(lambda x: f'{{0:0>5}}'.format(x)) \
+        + df['type'].apply(lambda t: codes['type'][t]) + df['suffix'].str.count('\.').astype(str)
+
+    return df
