@@ -2,29 +2,29 @@ import re, os
 import pandas as pd
 
 class Node:
-    def __init__(self, label, deep=0, index=None, fl=False, parent=None, dn=None):
+    def __init__(self, label, code=None, deep=0, singleLetter=False, parent=None, dn=None):
         self.parent = parent
         self.label = label
-        self.index = index
         self.dn = dn
+        self.code = code
         self.children = []
         self.deep = deep
-        self.fl = fl
+        self.singleLetter = singleLetter
         self._debug = os.environ.get('DEBUG')
         pass
     
     def level(self):
-        i = 0 if self.parent is None else self.parent.level() + 1 + self.fl
+        i = 0 if self.parent is None else self.parent.level() + 1 + self.singleLetter
         return i
     
-    def add(self, label, index=None, fl=False, dn=None):
-        childDeep = self.deep+1 if not self.fl else self.deep
-        node = Node(label, index=index, deep=childDeep, fl=fl, parent=self, dn=dn)
+    def add(self, label, code=None, singleLetter=False, dn=None):
+        childDeep = self.deep+1 if not self.singleLetter else self.deep
+        node = Node(label, code=code, deep=childDeep, singleLetter=singleLetter, parent=self, dn=dn)
         self.children.append(node)
         return node
     
     def leaves(self):
-        _leafs = [self] if self.index is not None else []
+        _leafs = [self] if self.code is not None else []
         for child in self.children:
             _leafs += child.leaves()
         return _leafs
@@ -33,7 +33,7 @@ class Node:
         return all([child.isLeaf() for child in self.children])
     
     def isLeaf(self):
-        return self.index is not None
+        return self.code is not None
     
     def branch(self):
         if self.parent is None:
@@ -45,10 +45,11 @@ class Node:
     
     def compact(self):
         if self.parent is not None:
-            while not self.fl and len(self.children) == 1 and not self.isLeaf():
+            while not self.singleLetter and len(self.children) == 1 and not self.isLeaf():
                 self.label = self.label + '.' + self[0].label
-                self.index = self[0].index
                 self.dn = self[0].dn
+                self.code = self[0].code
+                self.singleLetter = self[0].singleLetter
                 self.children = self[0].children
         for child in self.children:
             child.compact()
@@ -59,14 +60,14 @@ class Node:
             child._print()
     
     def __str__(self):
-        if self.fl:
+        if self.singleLetter:
             return 'FL/' + self.label[0]
         else:
-            pfl = int(self.parent.fl) if self.parent else ''
-            return f'{self.label}#{pfl}' + f'[{self.dn}]'
+            psingleLetter = int(self.parent.singleLetter) if self.parent else ''
+            return f'{self.label}#{psingleLetter}' + f'[{self.dn}]'
     def __repr__(self):
         return self.__str__()
-    
+
     def regex(self, indent='  '):
         groups = []
         
@@ -83,37 +84,42 @@ class Node:
         if self.parent is None:
             return '|'.join(groups)
         
-        label = self.label[1:] if self.parent.fl else self.label
+        label = self.label[1:] if self.parent.singleLetter else self.label
         
-        leaf = f'(?P<l{self.index}>{label})' if self.isLeaf() else ''
+        if self.isLeaf():
+            label = f'(?P<{self.code}>{label})'
         
         if len(groups) == 0:
-            return leaf
+            return label
         
-        bs = "" if self.fl else "\\."
+        bs = "" if self.singleLetter else "\\."
         
         uncaptured = f'{label}{bs}'
         
         child_regex = f'|'.join(groups) 
         
         sep = ''
-        if child_regex != '' and leaf != '':
+        if child_regex != '':
             sep = '|'
         
-        return f'{lindent}({uncaptured}({lindent2}{child_regex}{lindent2}){sep}{leaf})'
+        bl = ''
+        if self.deep == 0:
+            bl = '^'
+        
+        return f'{bl}{lindent}(?:{uncaptured}(?:{lindent2}{child_regex}{sep}{lindent2}))'
     
     pass
 
 def fillTree(sfxOr, l, parent):
     subcols = list(range(l+1, len(sfxOr.columns)-1)) # max number of labels is columns less 'index' column
-    subcols.append('id')
+    subcols.append('code')
     currentLabelUniques = sfxOr.drop_duplicates(subset=l)[l]
-    firstLetters = currentLabelUniques.str[0].value_counts(sort=False)
+    singleLetters = currentLabelUniques.str[0].value_counts(sort=False)
     flNodes = {}
-    for fl, c in firstLetters.iteritems():
-        flNodes[fl] = parent.add(fl, fl=True) if c > 1 else parent
-    for fl in flNodes:
-        sfx = sfxOr[sfxOr[l].str[0] == fl]
+    for singleLetter, c in singleLetters.iteritems():
+        flNodes[singleLetter] = parent.add(singleLetter, singleLetter=True) if c > 1 else parent
+    for singleLetter in flNodes:
+        sfx = sfxOr[sfxOr[l].str[0] == singleLetter]
         if l == 4:
             s_leaves = sfx
             s_branches = pd.DataFrame([])
@@ -122,7 +128,7 @@ def fillTree(sfxOr, l, parent):
             s_branches = sfx[sfx[l+1] != ''][l].drop_duplicates()
         leaves = {}
         for _, leaf in s_leaves.iterrows():
-            leaves[leaf[l]] = flNodes[leaf[l][0]].add(leaf[l], index=leaf['id'], dn='.'.join(leaf.values[:l+1]))
+            leaves[leaf[l]] = flNodes[leaf[l][0]].add(leaf[l], code=leaf['code'], dn='.'.join(leaf.values[:l+1]))
         for loc, branch in s_branches.iteritems():
             if branch not in leaves:
                 node = flNodes[branch[0]].add(branch)
@@ -139,7 +145,7 @@ def invertedSuffixLabels(df_etld):
     sfx = sfx[sfx.columns[::-1]]
     sfx = sfx.replace('@@', '')
     sfx = sfx.rename(columns={ 4:0, 3:1, 2:2, 1:3, 0:4})
-    sfx['id'] = df_etld.reset_index()['index']
+    sfx['code'] = df_etld['code']
     return sfx.copy()
 
 def getRegexes(df_etld):
@@ -156,3 +162,41 @@ def getRegexes(df_etld):
             regexes[tld] = re.compile(tree.regex())
     return regexes
 
+
+
+
+
+    # def regexLongestSuffix(self, indent='  '):
+    #     groups = []
+        
+    #     if self._debug:
+    #         lindent = '\n' + self.level() * indent
+    #         lindent2 = '\n' + (1 + self.level()) * indent
+    #     else:
+    #         lindent = ''
+    #         lindent2 = ''
+        
+    #     for child in self.children:
+    #         groups.append(child.regex(indent=indent))
+        
+    #     if self.parent is None:
+    #         return '|'.join(groups)
+        
+    #     label = self.label[1:] if self.parent.singleLetter else self.label
+        
+    #     leaf = f'(?P<{self.code}>{label})' if self.isLeaf() else ''
+        
+    #     if len(groups) == 0:
+    #         return leaf
+        
+    #     bs = "" if self.fl else "\\."
+        
+    #     uncaptured = f'{label}{bs}'
+        
+    #     child_regex = f'|'.join(groups) 
+        
+    #     sep = ''
+    #     if child_regex != '' and leaf != '':
+    #         sep = '|'
+        
+    #     return f'{lindent}({uncaptured}({lindent2}{child_regex}{lindent2}){sep}{leaf})'
