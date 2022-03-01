@@ -73,7 +73,7 @@ class PSLRegex():
 
     def match(self, s, onlytld=False, not_private=False):
         if s[0] not in self.regexes:
-            return [ self.ukwIndex ]
+            return self.ukwIndex
         gd = self.regexes[s[0]].match(s[1]).groupdict()
 
         if not_private:
@@ -96,7 +96,7 @@ class PSLRegex():
         end = time.time() - start
 
         if self.print_perf:
-            print(f'Found {len(m)} solution/s in {end} sec')
+            print(f'Found 1 solution/s in {end} sec')
         return suffix
 
     def multi(self, dnSeries, onlytld=False, not_private=False, compact=True):
