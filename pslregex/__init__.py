@@ -1,3 +1,4 @@
+import keyword
 import pandas as pd
 import time
 import json
@@ -7,6 +8,8 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 from pslregex.regexer import getRegexes
 from pslregex.etld import getETLDframe
+
+from pslregex.etld import codes, inv_codes
 
 DIR = os.path.dirname(__file__)
 
@@ -45,52 +48,96 @@ def update():
 
 
 class PSLRegex():
-    def __init__(self) -> None:
+    def __init__(self, print_perf=True) -> None:
         self.etldFrame = None
         self.regexes = None
+        self.ukwIndex = None
+        self.print_perf = print_perf
         pass
 
     def init(self):
         tmp = init()
         self.etldFrame = tmp[0]
-        print(self.etldFrame)
         self.regexes = tmp[1]
+
+        self.etldFrame['l'] = self.etldFrame.suffix.str.count('\.')
+
+        ukwRow = [ '--' ] * self.etldFrame.shape[1]
+        ukwRow[0] = self.etldFrame.shape[0]
+        ukwRow[-2] = 'ukw'
+        ukwRow[-1] = 0
+        self.ukwIndex = self.etldFrame.shape[0]
+        self.etldFrame.loc[self.etldFrame.shape[0]] = ukwRow
+
         pass
 
-    def single(self, dn):
+    def match(self, s, tld=True, not_private=False):
+        if s[0] not in self.regexes:
+            return [ self.ukwIndex ]
+        gd = self.regexes[s[0]].match(s[1]).groupdict()
+
+        if not_private:
+            indexes = [ int(code[1:6]) for code in gd if gd[code] is not None and code[-3:-1] != 'pd' ]
+        else:
+            indexes = [ int(code[1:6]) for code in gd if gd[code] is not None ]
+
+        if tld:
+            return indexes[0]
+
+        return indexes[-1] # return the longest one
+
+
+    def single(self, dn, tld=True, not_private=False):
         dn = dn.split('.')[::-1]
-        tld = dn[0]
-        dn = '.'.join(dn)
-        regex = self.regexes[tld]
 
         start = time.time()
-        m = regex.match(dn)
+        m = self.match((dn[0], '.'.join(dn)), tld, not_private)
         if m is None:
             raise 'Not found'
-        gd = m.groupdict()
-        gd = [ int(k[1:]) for k in gd if gd[k] is not None ]
+        s = self.etldFrame.iloc[m]
         end = time.time() - start
 
-        print(f'Found {len(gd)} solution/s in {end} sec')
-        return self.etldFrame.loc[gd[0]].to_markdown()
+        # print(f'Found {len(m)} solution/s in {end} sec')
+        return s
 
-    def frame(self, frame):
+    def multi(self, dn, tld=True, not_private=False, compact=True):
+        start = time.time()
+        dnRevertedSeries = dn.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
+
+        indexes = dnRevertedSeries.apply(self.match, tld=tld, not_private=not_private)
+
+        # if compact:
+        #     suffixes = self.etldFrame[['suffix', 'type', 'suffix type', 'code', 'l']].iloc[indexes]
+        # else:
+        #     suffixes = self.etldFrame.iloc[indexes]
+        end = time.time() - start
+
+        if self.print_perf:
+            print(f'Multi {dn.shape[0]} in {end} sec ({end/dn.shape[0]} sec/dn)')
+        
+        return indexes
+
+    def merge(self, frame, tld=True, not_private=False, compact=True):
         start = time.time()
         dnRevertedSeries = frame.dn.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
 
-        def match(s):
-            if s[0] not in self.regexes:
-                return -1
-            gd = self.regexes[s[0]].match(s[1]).groupdict()
-            gd = [ int(k[1:]) for k in gd if gd[k] is not None ]
-            return gd[0] if len(gd) == 1 else gd
+        indexes = dnRevertedSeries.apply(self.match, tld=tld, not_private=not_private)
 
-        matchesSeries = dnRevertedSeries.apply(match)
-        mergeFrame = matchesSeries.to_frame().merge(self.etldFrame, left_on='dn', right_index=True, how='left').drop(columns='dn')
-        result = frame.dn.to_frame().join(mergeFrame).copy()
+        if compact:
+            suffixes = self.etldFrame[['suffix', 'type', 'suffix type', 'code', 'l']].iloc[indexes]
+        else:
+            suffixes = self.etldFrame.iloc[indexes]
+
+        suffixes.index = frame.index
+        result = pd.concat([ frame, suffixes ], axis=1).sort_values(by='l')
         end = time.time() - start
-        print(f'Merged {frame.shape[0]} in {end} sec ({end/frame.shape[0]} sec/dn)')
+
+        if self.print_perf:
+            print(f'Merged {frame.shape[0]} in {end} sec ({end/frame.shape[0]} sec/dn)')
+        
         return result
+
+    
     pass
 
 def test():
@@ -100,13 +147,14 @@ def test():
 
     single = psl.single('google.co.uk')
 
-    datasetFrame = pd.read_csv('/home/princio/Desktop/malware_detection/nn/nn/dataset_training.csv').iloc[0:20_000]
+    datasetFrame = pd.read_csv('/home/princio/Desktop/malware_detection/nn/nn/dataset_training.csv').iloc[0:1_000]
     datasetFrame['tld'] = datasetFrame.dn.apply(lambda dn: dn[1 + dn.rfind('.'):])
 
-    frame = psl.frame(datasetFrame)
+    frame = psl.merge(datasetFrame)
 
     print(single)
-
-    print(frame)
+    # print(frame.values)
+    # print(pd.DataFrame.from_dict(single, orient='index').T)
+    print(pd.DataFrame.from_records(frame.values).fillna(''))#.to_csv('./tmp.csv'))
 
     pass
