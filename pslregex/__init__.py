@@ -71,7 +71,7 @@ class PSLRegex():
 
         pass
 
-    def match(self, s, tld=True, not_private=False):
+    def match(self, s, onlytld=False, not_private=False):
         if s[0] not in self.regexes:
             return [ self.ukwIndex ]
         gd = self.regexes[s[0]].match(s[1]).groupdict()
@@ -81,47 +81,45 @@ class PSLRegex():
         else:
             indexes = [ int(code[1:6]) for code in gd if gd[code] is not None ]
 
-        if tld:
+        if onlytld:
             return indexes[0]
 
         return indexes[-1] # return the longest one
 
 
-    def single(self, dn, tld=True, not_private=False):
+    def single(self, dn, onlytld=False, not_private=False):
+        start = time.time()
+
         dn = dn.split('.')[::-1]
-
-        start = time.time()
-        m = self.match((dn[0], '.'.join(dn)), tld, not_private)
-        if m is None:
-            raise 'Not found'
-        s = self.etldFrame.iloc[m]
-        end = time.time() - start
-
-        # print(f'Found {len(m)} solution/s in {end} sec')
-        return s
-
-    def multi(self, dn, tld=True, not_private=False, compact=True):
-        start = time.time()
-        dnRevertedSeries = dn.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
-
-        indexes = dnRevertedSeries.apply(self.match, tld=tld, not_private=not_private)
-
-        # if compact:
-        #     suffixes = self.etldFrame[['suffix', 'type', 'suffix type', 'code', 'l']].iloc[indexes]
-        # else:
-        #     suffixes = self.etldFrame.iloc[indexes]
+        m = self.match((dn[0], '.'.join(dn)), onlytld=onlytld, not_private=not_private)
+        suffix = self.etldFrame.iloc[m]
         end = time.time() - start
 
         if self.print_perf:
-            print(f'Multi {dn.shape[0]} in {end} sec ({end/dn.shape[0]} sec/dn)')
-        
-        return indexes
+            print(f'Found {len(m)} solution/s in {end} sec')
+        return suffix
 
-    def merge(self, frame, tld=True, not_private=False, compact=True):
+    def multi(self, dnSeries, onlytld=False, not_private=False, compact=True):
+        start = time.time()
+        dnRevertedSeries = dnSeries.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
+
+        indexes = dnRevertedSeries.apply(self.match, onlytld=onlytld, not_private=not_private)
+        if compact:
+            suffixes = self.etldFrame[['suffix', 'type', 'suffix type', 'code', 'l']].iloc[indexes]
+        else:
+            suffixes = self.etldFrame.iloc[indexes]
+        end = time.time() - start
+
+        if self.print_perf:
+            print(f'Multi {dnSeries.shape[0]} in {end} sec ({end/dnSeries.shape[0]} sec/dn)')
+        
+        return suffixes
+
+    def merge(self, frame, onlytld=True, not_private=False, compact=True):
         start = time.time()
         dnRevertedSeries = frame.dn.str.split('.').apply(lambda s: [ s[-1] , '.'.join(s[::-1]) ])
 
-        indexes = dnRevertedSeries.apply(self.match, tld=tld, not_private=not_private)
+        indexes = dnRevertedSeries.apply(self.match, onlytld=onlytld, not_private=not_private)
 
         if compact:
             suffixes = self.etldFrame[['suffix', 'type', 'suffix type', 'code', 'l']].iloc[indexes]
@@ -129,13 +127,13 @@ class PSLRegex():
             suffixes = self.etldFrame.iloc[indexes]
 
         suffixes.index = frame.index
-        result = pd.concat([ frame, suffixes ], axis=1).sort_values(by='l')
+        frame_merged = pd.concat([ frame, suffixes ], axis=1).sort_values(by='l')
         end = time.time() - start
 
         if self.print_perf:
             print(f'Merged {frame.shape[0]} in {end} sec ({end/frame.shape[0]} sec/dn)')
         
-        return result
+        return frame_merged
 
     
     pass
