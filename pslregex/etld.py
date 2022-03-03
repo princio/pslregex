@@ -1,235 +1,310 @@
 
 import pandas as pd
 import requests
-import re
+import re, os
 
 codes = {
     'type': {
         'country-code': 'cc',
-        'private-domains': 'pd',
         'sponsored': 'sp',
         'infrastructure': 'in',
         'generic-restricted': 'gr',
         'generic': 'ge',
-        'other': 'ot',
-        'orphan-punycode': 'op',
         'test': 'te'
     },
-    'origin': {
-        'both': 'b',
-        'merged': 'm',
-        'ICANN': 'i',
-        'PSL': 'p'
+    'section': {
+        'icann': 'i',
+        'icann-new': 'n',
+        'private-domain': 'p'
     }
 }
 
 inv_codes = {}
-for t in [ 'type', 'origin' ]:
+for t in [ 'type', 'section' ]:
     inv_codes[t] = {v: k for k, v in codes[t].items() }
 
-def getETLDframe():
-    psl_file = requests.get(
-            'https://publicsuffix.org/list/public_suffix_list.dat',
-            verify=False,
-            allow_redirects=True,
-            timeout=5
-        ).text.split('\n')
 
-
-    df_iana = pd.read_html('https://www.iana.org/domains/root/db', attrs = {'id': 'tld-table'})[0]
-
-    df_tldlist = pd.read_csv('https://tld-list.com/df/tld-list-details.csv')
-
-    df_iana = df_iana.rename(columns={
-        'Domain': 'tld', 'Type': 'type', 'TLD Manager': 'manager'
-    })
-
-    df_tldlist = df_tldlist.rename(columns={'Punycode': 'punycode'})
-
-    if (df_iana['tld'].apply(lambda tld: tld.count('.') > 1)).sum() > 0:
-        raise 'Unexpected: TLDs should have only one point each.'
-
-    # cleaning TLDs from points and special right-to-left character
-    df_iana['tld'] = df_iana.tld.str.replace('.', '', n=1, regex=False)
-    df_iana['tld'] = df_iana.tld.str.replace('\u200f', '', n=1, regex=False)
-    df_iana['tld'] = df_iana.tld.str.replace('\u200e', '', n=1, regex=False)
-
-    # converting Type labels to IANA naming convention
-    df_tldlist['Type'] = df_tldlist['Type'].str.replace('gTLD', 'generic', regex=False)
-    df_tldlist['Type'] = df_tldlist['Type'].str.replace('ccTLD', 'country-code', regex=False)
-    df_tldlist['Type'] = df_tldlist['Type'].str.replace('grTLD', 'generic-restricted',regex=False)
-    df_tldlist['Type'] = df_tldlist['Type'].str.replace('sTLD', 'sponsored', regex=False)
-
-
-    df = df_iana.merge(df_tldlist, left_on='tld', right_on='TLD', how='outer')
-
-
-    ### HANDLING NOT COINCIDENT TLDs ###
-
-    # check TLD-types should be the same execept for 'music' and pakistan پاكستان
-    if df[(~(df.Type == df['type']))].shape[0] > 2:
-        print(df[(~(df.Type == df['type']))])
-        raise 'Error: TLD-Types not coincided'
-
-    # check which IANA tlds are not in tldlist
-    iana_notin_tldlist = df[df.TLD.isna()].tld
-    if iana_notin_tldlist.shape[0] > 0:
-        if not (iana_notin_tldlist.shape[0] == 1 and iana_notin_tldlist.iloc[0] == 'music'):
-            print(f'Warning: IANA has {iana_notin_tldlist.shape[0]} TLDs not contained in tldlist:')
-            for _, tmp in iana_notin_tldlist.iteritems():
-                print(f'\t- {tmp}')
-    # check which tldlist tlds are not in IANA
-    tldlist_notin_iana = df[df.tld.isna()].TLD
-    if tldlist_notin_iana.shape[0] > 0:
-        if not (tldlist_notin_iana.shape[0] == 1 and tldlist_notin_iana.iloc[0] == 'پاكستان'):
-            print(f'Warning: tldlist has {tldlist_notin_iana.shape[0]} TLDs not contained in IANA')
-            for _, tmp in tldlist_notin_iana.iteritems():
-                print(f'\t- {tmp}')
-
-    # cloning not shared TLDs to specific columns (only one from pakistan)
-    nans = df.tld.isna()
-    df['tld'].values[nans] = df[nans].TLD
-    df['type'].values[nans] = df[nans].Type
-    df['manager'].values[nans] = df[nans].Sponsor
-
-    ### FINISHED TO HANDLE NOT COINCIDENT TLDs ###
-
-    df_tld = df[['tld', 'punycode', 'type', 'manager']].copy()
-
-    psl_lines = psl_file
-
-    sections_delimiters = [
-        '// ===BEGIN ICANN DOMAINS===',
-        '// newGTLDs',
-        '// ===BEGIN PRIVATE DOMAINS==='
-    ]
-    
-    sections_names = [
-        'icann',
-        'icann-new',
-        'private-domains'
-    ]
-
-    regex_punycode = r'^\/\/ (xn--.*?) .*$'
-    regex_comment = r'^\/\/ (?!Submitted)(.*?)(?: : )(.*?)$'
-
-    line_start = 1 + psl_lines.index('// ===BEGIN ICANN DOMAINS===')
-
-    # Take attention to punycodes parsing: a new punycode should be used only for the PSL the punycode comment
-
-    sd = 0
-    manager = None
-    punycode = None
-    values = []
-    last_tld = ''
-    punycode_found = False
-    for i in range(line_start, len(psl_lines)):
-        line = psl_lines[i]
-        if len(line) == 0: continue
-        if sd+1 < len(sections_delimiters) and line.find(sections_delimiters[sd+1]) == 0:
-            sd += 1
-        if line.find('//') == 0:
-            punycode_match = re.match(regex_punycode, line)
-            if punycode_match is not None:
-                punycode_found = True
-                punycode = punycode_match[1]
-            else:
-                first_comment_match = re.match(regex_comment, line)
-                if first_comment_match is not None:
-                    manager = first_comment_match[1]
-            continue
-            
-        tld = line
-        tld = tld[tld.rfind('.')+1:]
-        
-        # if the tld (not the suffix) has changed and so the punycode too
-        if last_tld != tld and not punycode_found:
-            punycode = None
-        punycode_found = False
-        
-        values.append([ sections_names[sd], tld, punycode, line, manager ])
-        
-        last_tld = tld
+class ETLD:
+    def __init__(self, dir) -> None:
+        self.files = {}
+        self.dir = dir
+        self.frame = None
         pass
 
-    df_psl = pd.DataFrame(values, columns=['type', 'tld', 'punycode', 'suffix', 'manager'])
+    def init(self, update=True):
 
-    df_psl = df_psl[['type', 'tld', 'punycode', 'suffix', 'manager']].reset_index()
+        if not update and os.path.exists(os.path.join(self.dir, 'etld.csv')):
+            self.frame = pd.read_csv(os.path.join(self.dir, 'etld.csv'), index_col=0)
+            return
 
-    df_psl.head()
+        self.files = {}
 
-    # the merge will be done with the tld column
+        if update or not os.path.exists(os.path.join(self.dir, 'public_suffix_list.dat')):
+            self.files['psl'] = requests.get(
+                'https://publicsuffix.org/list/public_suffix_list.dat',
+                verify=False,
+                allow_redirects=True,
+                timeout=5
+            ).text
 
-    df = df_psl.reset_index().merge(df_tld.reset_index(), left_on='tld', right_on='tld', suffixes=['_psl', '_tld'], how='outer')
+            with open(os.path.join(self.dir, 'public_suffix_list.dat'), 'w') as f:
+                f.writelines(self.files['psl'])
 
-    df['origin'] = 'both'
-    df['origin'].values[(~df['type_psl'].isna()) & (df['type_tld'].isna())] = 'PSL'
-    df['origin'].values[(~df['type_tld'].isna()) & (df['type_psl'].isna())] = 'ICANN'
-    df['origin'].values[(df['origin'] == 'both') & (df.tld != df.suffix)] = 'merged'
+        if update or not os.path.exists(os.path.join(self.dir, 'iana.csv')):
+            self.files['iana'] = pd.read_html('https://www.iana.org/domains/root/db', attrs = {'id': 'tld-table'})[0]
+            self.files['iana'].to_csv(os.path.join(self.dir, 'iana.csv'))
 
-    df = df.reset_index(drop=True)
-
-
-    # merge
-
-    # the 'type' columns:
-    # - equal to TLDLIST type
-    # - only if PSL type is private-domains, replace the previously defined TLDLIST type with the PSL one
-    # - for unknown types: other if punycode is empty, orphan-punycode otherwise
-    df['type'] = df['type_tld']
-
-    icann_pd = (df['type_psl'] == 'private-domains')
-    df['type'].values[icann_pd] = 'private-domains'
+        if update or not os.path.exists(os.path.join(self.dir, 'tldlist.csv')):
+            self.files['tldlist'] = pd.read_csv('https://tld-list.com/df/tld-list-details.csv')
+            self.files['tldlist'].to_csv(os.path.join(self.dir, 'tldlist.csv'))
 
 
-    mask = (df['type_tld'].isna() & df['punycode_psl'].isna())
-    df['type'].values[mask] = 'other'
+        with open(os.path.join(self.dir, 'public_suffix_list.dat'), 'r') as f:
+            self.files['psl'] = [ l.replace('\n', '') for l in f.readlines() ]
+        self.files['iana'] = pd.read_csv(os.path.join(self.dir, 'iana.csv'))
+        self.files['tldlist'] = pd.read_csv(os.path.join(self.dir, 'tldlist.csv'))
 
-    mask = (df['type_tld'].isna() & (~df['punycode_psl'].isna()))
-    df['type'].values[mask] = 'orphan-punycode'
+        def parseIANA():
+            df = self.files['iana'].rename(columns={
+                'Domain': 'tld', 'Type': 'type', 'TLD Manager': 'manager'
+            })
+            # cleaning TLDs from points and special right-to-left character
+            df['tld'] = df.tld.str.replace('.', '', n=1, regex=False)
+            df['tld'] = df.tld.str.replace('\u200f', '', n=1, regex=False)
+            df['tld'] = df.tld.str.replace('\u200e', '', n=1, regex=False)
+            
+            if (df.tld.apply(lambda tld: tld.count('.') > 1)).sum() > 0:
+                raise 'Unexpected: TLDs should have only one point each.'
+            
+            df = df.fillna('-').sort_values(by='tld').reset_index(drop=True).reset_index()
+            
+            return df
 
-    # Checking rows having both punycodes not null matches
-    df_punycode = df[~(df.punycode_psl.isna()) & ~(df.punycode_tld.isna())]
-    if (df_punycode.punycode_psl != df_punycode.punycode_tld).sum() > 0:
-        print('Warning: punycode does not match but should.')
-    df['punycode'] = df['punycode_psl']
-    notna_punycodetld = ~(df['punycode_tld'].isna())
-    df['punycode'].values[notna_punycodetld] = df['punycode_tld'].loc[notna_punycodetld]
+        def parseTLDLIST():
+            df = self.files['tldlist'].copy()
+            df.rename(columns={ col: col.lower() for col in df.columns }, inplace=True)
+            # df.rename(columns={ 'sponsor': 'manager' }, inplace=True)
+            # converting Type labels to IANA naming convention
+            df['type'] = df['type'].str.replace('gTLD', 'generic', regex=False)
+            df['type'] = df['type'].str.replace('ccTLD', 'country-code', regex=False)
+            df['type'] = df['type'].str.replace('grTLD', 'generic-restricted',regex=False)
+            df['type'] = df['type'].str.replace('sTLD', 'sponsored', regex=False)
+            
+            df = df.fillna('-').sort_values(by='tld').reset_index(drop=True).reset_index()
+            
+            return df
 
+        def parseICANN():
+            import json
 
-    df = df[[
-        'suffix', 'tld',
-        'punycode',
-        'origin',
-        'type', 'type_tld', 'type_psl',
-        'manager_tld', 'manager_psl'
-    ]]
+            with open('./country-json/src/country-by-domain-tld.json') as json_file:
+                cc_tld = {}
+                for line in json.load(json_file):
+                    if line['tld'] is not None:
+                        cc_tld[line['tld'].replace('.', '')] = line['country']
+            
+            cc_tld['ac'] = 'Ascension Island'
+            cc_tld['ax'] = 'Åland Islands'
+            cc_tld['bl'] = 'Collectivité territoriale de Saint-Barthélemy'
+            cc_tld['bq'] = 'Caribbean Netherlands'
+            cc_tld['cw'] = 'Curaçao'
+            cc_tld['eu'] = 'Europe'
+            cc_tld['fm'] = 'Federated States of Micronesia'
+            cc_tld['fo'] = 'Faroe Islands'
+            cc_tld['gg'] = 'Bailiwick of Guernsey'
+            cc_tld['je'] = 'Jersey'
+            cc_tld['im'] = 'Isle of Man'
+            cc_tld['me'] = 'Montenegro'
+            cc_tld['mf'] = 'Collectivity of Saint Martin'
+            cc_tld['su'] = 'Russian Federation'
+            cc_tld['sx'] = 'Sint Maarten'
+            cc_tld['tp'] = 'retired'
+            cc_tld['tw'] = 'Taiwan'
+            cc_tld['uk'] = 'United Kingdom'
+            cc_tld['um'] = 'United States Minor Outlying Islands'
+            cc_tld['ελ'] = 'Greece'
+            cc_tld['ευ'] = 'Greece'
+            cc_tld['бг'] = 'Bulgaria'
+            cc_tld['бел'] = 'Belarus'
+            cc_tld[''] = ''
+                
+            df_iana = parseIANA()
+            
+            df_tldlist = parseTLDLIST()
+            
+            df = df_iana.merge(df_tldlist, on=[ 'tld', 'type' ], how='outer', suffixes=('_iana', '_tldlist'))
+            
+            print(f'IANA tlds not present in TLDLIST: {df[df.index_iana.isna()].shape[0]}')
+            print(f'TLDLIST tlds not present in IANA: {df[df.index_tldlist.isna()].shape[0]}')
+            
+            df = df.drop(columns=[ 'index_iana', 'index_tldlist' ]).fillna('-')
+            df = df.sort_values(by='tld').reset_index()
+            
+            df['country'] = df.tld.apply(lambda tld: '-' if tld not in cc_tld else cc_tld[tld])
+            
+            return df[['index','tld','type','manager', 'sponsor','punycode','language code','translation','romanized','rtl', 'country']]
 
-    df.rename(columns={'type_tld': 'tld type', 'type_psl': 'suffix type'}, inplace=True)
-    df.rename(columns={'manager_tld': 'tld manager', 'manager_psl': 'psl comment'}, inplace=True)
+        def parsePSL():
+            psl_lines = self.files['psl'].copy()
 
-    suffix_na = df.suffix.isna()
-    tld_na = df.tld.isna()
+            sections_delimiters = [
+                '// ===BEGIN ICANN DOMAINS===', '// newGTLDs', '// ===BEGIN PRIVATE DOMAINS==='
+            ]
 
-    # checking empty tlds (should never happen)
-    if df[tld_na].shape[0] > 0:
-        raise f'Error: {df[tld_na].shape[0]} NaN empty TLDs'
+            sections_names = [ 'icann', 'icann-new', 'private-domain' ]
+
+            regex_punycode = r'^\/\/ (xn--.*?) .*$'
+            regex_comment = r'^\/\/ (?!Submitted)(.*?)(?: : )(.*?)$'
+
+            line_start = 1 + psl_lines.index(sections_delimiters[0])
+
+            # Take attention to punycodes parsing: a new punycode should be used only for the next PSL
+            
+            sd = 0
+            punycode = None
+            values = []
+            last_tld = ''
+            punycode_found = False
+            for i in range(line_start, len(psl_lines)):
+                line = psl_lines[i]
+                if len(line) == 0: continue
+                if sd+1 < len(sections_delimiters) and line.find(sections_delimiters[sd+1]) == 0:
+                    sd += 1
+                if line.find('//') == 0:
+                    punycode_match = re.match(regex_punycode, line)
+                    if punycode_match is not None:
+                        punycode_found = True
+                        punycode = punycode_match[1]
+                    else:
+                        first_comment_match = re.match(regex_comment, line)
+                        if first_comment_match is not None:
+                            manager = first_comment_match[1]
+                    continue
+
+                suffix = line
+                tld = suffix[suffix.rfind('.')+1:]
+
+                # if the tld (not the suffix) changed, the punycode changed too
+                if last_tld != tld and not punycode_found:
+                    punycode = None
+                punycode_found = False
+
+                values.append([ suffix, tld, punycode, sections_names[sd] ]) #, manager
+
+                last_tld = tld
+                
+                pass
+
+            df = pd.DataFrame(values, columns=[ 'suffix', 'tld', 'punycode', 'type'])
+
+            return df.reset_index()
+    
+        def parse():
+
+            df_icann = parseICANN()
+            df_psl = parsePSL()
+
+            df = df_icann.merge(df_psl, on='tld', how='outer', suffixes=('_icann', '_psl'))
+
+            print(f'ICANN tlds not present in PSL: {df[df.index_icann.isna()].shape[0]}')
+            print(f'PSL tlds not present in ICANN: {df[df.index_psl.isna()].shape[0]}')
+
+            df = df[['suffix', 'tld', 'punycode_icann', 'punycode_psl', 'type_icann', 'type_psl', 'index_icann', 'index_psl' ]]
+
+            df['tld'] =    df.tld.where(~df.index_icann.isna(), df[df.index_icann.isna()].suffix)
+            df['suffix'] = df.suffix.where(~df.index_psl.isna(), df[df.index_psl.isna()].tld)
+            
+            df['origin'] = 'both'
+            df['origin'] = df.origin.where(~df.index_icann.isna(), 'PSL')
+            df['origin'] = df.origin.where(~df.index_psl.isna(), 'icann')
+
+            df['section'] = df['type_psl'].where(~(df['type_psl'] == 'icann'), 'icann')
+            df['section'] = df['type_psl'].where(~(df['type_psl'] == 'new-icann'), 'icann-new')
+            df['section'] = df['type_psl'].where(~(df['type_psl'] == 'private-domain'), 'private-domain')
+            df['section'] = df['type_psl'].where(~(df['type_psl'].isna()), 'icann')
+
+            df['type'] = df['type_icann']
+            df['type'] = df['type'].where(~((df['type_icann'].isna()) & (df['punycode_psl'].str.count('\-') > 0) & (df['type_psl'] == 'icann')), 'country-code')
+            df['type'] = df['type'].where(~((df['type_icann'].isna()) & (df['section'] == 'icann')), 'generic')
+            df['type'] = df['type'].where(~df['type_icann'].isna(), 'generic')
+            
+            df = df[['suffix', 'tld', 'type', 'origin', 'section']].sort_values(by='suffix').reset_index(drop=True).reset_index()
+
+            df = df.reset_index().rename(columns={'index': 'id'})
+
+            df['code'] = df['section'].apply(lambda o: codes['section'][o]) \
+                + df['id'].apply(lambda x: f'{{0:0>5}}'.format(x)) \
+                + df['type'].apply(lambda t: codes['type'][t]) + df['suffix'].str.count('\.').astype(str)
+
+            df = df[['suffix', 'tld', 'code', 'type', 'origin', 'section']].sort_values(by='suffix').reset_index(drop=True).reset_index()
+
+            return df
         
-    # checking empty suffixes
-    if df[suffix_na & tld_na].shape[0] > 0:
-        print(f'Warning: there are {df[suffix_na].shape[0]} NaN Suffixes and TLDs')
-    df.suffix.values[suffix_na] = df.tld[suffix_na]
+        self.frame = parse()
 
-    df = df.fillna('')
+        pass
 
-    df.to_csv('etld.csv')
+def getCountry(df):
+    # TODO: problem with ISO Codes GRE, USSR and regex
+    import wptools
+    import wikipedia
 
-    df[df['origin'] != 'both'].to_csv('differents.csv')
+    cctld = df[(df.type == 'country-code') & (df.country == '-')].sort_values(by='country').tld
 
-    df = df.reset_index().rename(columns={'index': 'id'})
+    ibreg = re.compile(r'Entities connected with.*?\{\{(?:(?:\w+\|)?)?(?:(?P<ISO>[A-Z]+)|(?P<Normal>[\w, ]+))\}\}(?:\s+\[\[(?P<link>[\w, ]+)\|?(?P<name>[\w, ]+)\]\])?')
 
-    df['code'] = df['origin'].apply(lambda o: codes['origin'][o]) \
-        + df.reset_index()['index'].apply(lambda x: f'{{0:0>5}}'.format(x)) \
-        + df['type'].apply(lambda t: codes['type'][t]) + df['suffix'].str.count('\.').astype(str)
+    def try_infobox(page):
+        so = page.get_parse()
+        infobox = so.data['infobox']['intendeduse']
+        m = ibreg.match(infobox)
+        if m is not None:
+            return m.groupdict()
+        return None
 
-    return df
+
+    def try_page(pageid):
+        p = wikipedia.page(pageid=pageid).html()
+        p = p[p.find('Entities connected with'):]
+        p = p[:p.find('</tr>')].replace('\n', '')
+        m = preg.match(p)
+        if m is not None:
+            return m.groups()[0]
+        return None
+
+
+    cc = {}
+    a = True
+    for tld in cctld:
+        if tld == tldk:
+            a = False
+            continue
+        if a: continue
+        
+        country = None
+        
+        try:
+            page = wptools.page(f'.{tld}', silent=True)
+        except Exception as e:
+            print(e)
+            pass
+        
+        query = page.get_query().data
+        
+        print('title=' + query['title'])
+        
+        if page is not None:
+            if query['title'][0] == '.':
+                country = try_infobox(page)
+                if country.upper() == country:
+                    print(wikipedia.search(f'country {country}'))
+            else:
+                country = query['title']
+        else:
+            q = wikipedia.search(tld)
+            country = q[0]
+            
+            
+        print(country)
+                
+        cc[tld] = country
+    return cc

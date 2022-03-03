@@ -16,3 +16,19 @@ In that way:
 > `load.s3.amazonaws.com` -> `load.s3.amazonaws`
 instead of:
 > `load.s3.amazonaws.com` -> `load`
+
+
+# IMPORTANT!
+
+`Type` and `Tld Type` only differs when `Type` is `private-domains`.
+
+That means that the not-`private-domains` type will always be like the tld.
+
+```tlds = psl.etldFrame#[psl.etldFrame.l == 0]
+
+display(tlds[tlds.type != tlds['tld type']].drop_duplicates(subset=['type','origin', 'tld type', 'suffix type']))
+
+display(tlds.drop_duplicates(subset=['type','origin']))
+```
+
+All the multiple level `cc` have the tld?
