@@ -22,17 +22,17 @@ class RegexEncoder(json.JSONEncoder):
 
 
 class PSLRegex:
-    def __init__(self, print_perf=True) -> None:
-        self.etld = ETLD(DIR)
+    def __init__(self, dir=DIR, print_perf=True) -> None:
+        self.etld = ETLD(dir)
         self.regexes = None
         self.ukwIndex = None
         self.print_perf = print_perf
         pass
 
-    def init(self, update=False):
-        self.etld.init(update)
+    def init(self, download=False, update=False):
+        self.etld.init(download=download, update=update)
         
-        if os.path.exists(os.path.join(DIR, 'regex.json')):
+        if not update and os.path.exists(os.path.join(DIR, 'regex.json')):
             with open(os.path.join(DIR, 'regex.json')) as f:
                 jregexes = json.load(f)
                 self.regexes = { tld: re.compile(jregexes[tld]) for tld in jregexes }
@@ -79,6 +79,7 @@ class PSLRegex:
 
         dn = dn.split('.')[::-1]
         m = self.match((dn[0], '.'.join(dn)), onlytld=onlytld, not_private=not_private)
+        print(m)
         suffix = self.etld.frame.iloc[m]
         end = time.time() - start
 

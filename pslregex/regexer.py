@@ -1,6 +1,9 @@
 import re, os
 import pandas as pd
 
+
+def sl(l, indent=4, c=' '):
+    return (l+1)*indent*c + f'{l}#'
 class Node:
     def __init__(self, label, code=None, deep=0, singleLetter=False, parent=None, dn=None):
         self.parent = parent
@@ -20,6 +23,12 @@ class Node:
     def add(self, label, code=None, singleLetter=False, dn=None):
         childDeep = self.deep+1 if not self.singleLetter else self.deep
         node = Node(label, code=code, deep=childDeep, singleLetter=singleLetter, parent=self, dn=dn)
+        self.children.append(node)
+        return node
+
+    
+    def addChild(self, node):
+        node.parent = self
         self.children.append(node)
         return node
     
@@ -46,7 +55,7 @@ class Node:
     def compact(self):
         if self.parent is not None:
             while not self.singleLetter and len(self.children) == 1 and not self.isLeaf():
-                self.label = self.label + '.' + self[0].label
+                self.label = self.label + '\\.' + self[0].label
                 self.dn = self[0].dn
                 self.code = self[0].code
                 self.singleLetter = self[0].singleLetter
@@ -58,13 +67,18 @@ class Node:
         print((self.level() * '  ') + str(self))
         for child in self.children:
             child._print()
+
+    def print2(self):
+        print(f'{sl(self.deep)} {self.__str__()}')
+        for child in self.children:
+            child.print2()
     
     def __str__(self):
         if self.singleLetter:
             return 'FL/' + self.label[0]
         else:
             psingleLetter = int(self.parent.singleLetter) if self.parent else ''
-            return f'{self.label}#{psingleLetter}' + f'[{self.dn}]'
+            return f'{self.label}' + (f'[{self.code}]' if self.isLeaf() else '')
     def __repr__(self):
         return self.__str__()
 
@@ -85,9 +99,11 @@ class Node:
             return '|'.join(groups)
         
         label = self.label[1:] if self.parent.singleLetter else self.label
+
+        label = label.replace('*', '.+')
         
         if self.isLeaf():
-            label = f'(?P<{self.code}>{label})'
+            label = f'(?P<{self.code}>{label}\\.)'
         
         if len(groups) == 0:
             return label
@@ -102,11 +118,12 @@ class Node:
         if child_regex != '':
             sep = '|'
         
-        bl = ''
+        regex = f'{lindent}(?:{uncaptured}(?:{lindent2}{child_regex}{sep}{lindent2}))'
+
         if self.deep == 0:
-            bl = '^'
+            regex = '^' + regex + '(?:.+(?:.*)*)$'
         
-        return f'{bl}{lindent}(?:{uncaptured}(?:{lindent2}{child_regex}{sep}{lindent2}))'
+        return regex
     
     pass
 
@@ -139,7 +156,8 @@ def fillTree(sfxOr, l, parent):
         pass
 
 def invertedSuffixLabels(df_etld):
-    sfx = df_etld.suffix.str.replace(r'*.', '', regex=False).copy()
+    sfx = df_etld.suffix.copy()
+    # sfx = df_etld.suffix.str.replace(r'*.', '', regex=False).copy()
     maxLabels_suffix = sfx.str.count('\.').max()
     sfx = sfx.apply(lambda s: ('@@.'*(maxLabels_suffix - s.count('.'))) + s).str.split('.', expand=True)
     sfx = sfx[sfx.columns[::-1]]
@@ -164,39 +182,3 @@ def getRegexes(df_etld):
 
 
 
-
-
-    # def regexLongestSuffix(self, indent='  '):
-    #     groups = []
-        
-    #     if self._debug:
-    #         lindent = '\n' + self.level() * indent
-    #         lindent2 = '\n' + (1 + self.level()) * indent
-    #     else:
-    #         lindent = ''
-    #         lindent2 = ''
-        
-    #     for child in self.children:
-    #         groups.append(child.regex(indent=indent))
-        
-    #     if self.parent is None:
-    #         return '|'.join(groups)
-        
-    #     label = self.label[1:] if self.parent.singleLetter else self.label
-        
-    #     leaf = f'(?P<{self.code}>{label})' if self.isLeaf() else ''
-        
-    #     if len(groups) == 0:
-    #         return leaf
-        
-    #     bs = "" if self.fl else "\\."
-        
-    #     uncaptured = f'{label}{bs}'
-        
-    #     child_regex = f'|'.join(groups) 
-        
-    #     sep = ''
-    #     if child_regex != '' and leaf != '':
-    #         sep = '|'
-        
-    #     return f'{lindent}({uncaptured}({lindent2}{child_regex}{lindent2}){sep}{leaf})'

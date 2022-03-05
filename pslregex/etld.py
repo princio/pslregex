@@ -19,10 +19,20 @@ codes = {
     }
 }
 
+### Coding:
+###
+### A code is composed by: S00000TTE1
+### Where:
+### - S: the section (icann, icann-new, private-domain)
+### - 00000: five digits which indicates the index in the etld frame
+### - TT: two letters which indicates the type
+### - E: if is an exception suffix
+### - 1: the number of labels
+
+
 inv_codes = {}
 for t in [ 'type', 'section' ]:
     inv_codes[t] = {v: k for k, v in codes[t].items() }
-
 
 class ETLD:
     def __init__(self, dir) -> None:
@@ -31,7 +41,7 @@ class ETLD:
         self.frame = None
         pass
 
-    def init(self, update=True):
+    def init(self, download=False, update=False):
 
         if not update and os.path.exists(os.path.join(self.dir, 'etld.csv')):
             self.frame = pd.read_csv(os.path.join(self.dir, 'etld.csv'), index_col=0)
@@ -39,7 +49,7 @@ class ETLD:
 
         self.files = {}
 
-        if update or not os.path.exists(os.path.join(self.dir, 'public_suffix_list.dat')):
+        if download or not os.path.exists(os.path.join(self.dir, 'public_suffix_list.dat')):
             self.files['psl'] = requests.get(
                 'https://publicsuffix.org/list/public_suffix_list.dat',
                 verify=False,
@@ -50,11 +60,11 @@ class ETLD:
             with open(os.path.join(self.dir, 'public_suffix_list.dat'), 'w') as f:
                 f.writelines(self.files['psl'])
 
-        if update or not os.path.exists(os.path.join(self.dir, 'iana.csv')):
+        if download or not os.path.exists(os.path.join(self.dir, 'iana.csv')):
             self.files['iana'] = pd.read_html('https://www.iana.org/domains/root/db', attrs = {'id': 'tld-table'})[0]
             self.files['iana'].to_csv(os.path.join(self.dir, 'iana.csv'))
 
-        if update or not os.path.exists(os.path.join(self.dir, 'tldlist.csv')):
+        if download or not os.path.exists(os.path.join(self.dir, 'tldlist.csv')):
             self.files['tldlist'] = pd.read_csv('https://tld-list.com/df/tld-list-details.csv')
             self.files['tldlist'].to_csv(os.path.join(self.dir, 'tldlist.csv'))
 
@@ -214,12 +224,17 @@ class ETLD:
             df['tld'] =    df.tld.where(~df.index_icann.isna(), df[df.index_icann.isna()].suffix)
             df['suffix'] = df.suffix.where(~df.index_psl.isna(), df[df.index_psl.isna()].tld)
             
+            df['exception'] = df['suffix'].str[0] == '!'
+            df['suffix'] = df.suffix.where(~df.exception, df[df.exception].suffix.str[1:])
+
+            df['newGLTD'] = df['type_psl'] == 'new-icann'
+
             df['origin'] = 'both'
             df['origin'] = df.origin.where(~df.index_icann.isna(), 'PSL')
             df['origin'] = df.origin.where(~df.index_psl.isna(), 'icann')
 
             df['section'] = df['type_psl'].where(~(df['type_psl'] == 'icann'), 'icann')
-            df['section'] = df['type_psl'].where(~(df['type_psl'] == 'new-icann'), 'icann-new')
+            df['section'] = df['type_psl'].where(~(df['type_psl'] == 'new-icann'), 'icann')
             df['section'] = df['type_psl'].where(~(df['type_psl'] == 'private-domain'), 'private-domain')
             df['section'] = df['type_psl'].where(~(df['type_psl'].isna()), 'icann')
 
@@ -227,17 +242,17 @@ class ETLD:
             df['type'] = df['type'].where(~((df['type_icann'].isna()) & (df['punycode_psl'].str.count('\-') > 0) & (df['type_psl'] == 'icann')), 'country-code')
             df['type'] = df['type'].where(~((df['type_icann'].isna()) & (df['section'] == 'icann')), 'generic')
             df['type'] = df['type'].where(~df['type_icann'].isna(), 'generic')
-            
-            df = df[['suffix', 'tld', 'type', 'origin', 'section']].sort_values(by='suffix').reset_index(drop=True).reset_index()
 
-            df = df.reset_index().rename(columns={'index': 'id'})
+            df = df.sort_values(by='suffix').reset_index(drop=True).reset_index()
 
             df['code'] = df['section'].apply(lambda o: codes['section'][o]) \
-                + df['id'].apply(lambda x: f'{{0:0>5}}'.format(x)) \
-                + df['type'].apply(lambda t: codes['type'][t]) + df['suffix'].str.count('\.').astype(str)
+                + df['index'].apply(lambda x: f'{{0:0>5}}'.format(x)) \
+                + df['type'].apply(lambda t: codes['type'][t]) \
+                + df['exception'].apply(lambda e: 'e' if e else 'd') \
+                + df['suffix'].str.count('\.').astype(str)
 
-            df = df[['suffix', 'tld', 'code', 'type', 'origin', 'section']].sort_values(by='suffix').reset_index(drop=True).reset_index()
-
+            df = df[['code', 'suffix', 'tld', 'type', 'origin', 'section', 'newGLTD', 'exception']]
+            
             return df
         
         self.frame = parse()
