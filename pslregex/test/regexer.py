@@ -3,7 +3,6 @@ from typing import Set
 import pandas as pd
 from pslregex import PSLRegex
 import pslregex.regexer as regexer
-from pslregex.etld import ETLD
 from pathlib import Path
 
 dir = Path(__file__).parent
@@ -54,17 +53,10 @@ def __regex(self, firts_letter=False):
     if self.code is None:
         regex_label += '\\.'
     else:
-        # regex_label = f'(?:(?P<{self.code}>{regex_label})\\.)'
         regex_label = f'(?P<{self.code}>{regex_label}\\.)'
     
 
-    open = ''
-    close = ''
-    # if firts_letter and len(self.children) > 1:
-    #     open = f'(?={self.label[0]})(?:'
-    #     close = '|)'
-
-    regex = f'{open}{regex_label}{regex_groups}{close}'
+    regex = f'{regex_label}{regex_groups}'
     
     if self.deep == 0:
         regex = '^' + regex + '(?:[^\.]+)(?:\.[^\.]*)*$'
@@ -72,11 +64,6 @@ def __regex(self, firts_letter=False):
     print(f'{sl(self.deep)} {regex}')
 
     return regex
-
-
-
-
-
 
 def __getNodes(tree, l):
 
@@ -99,7 +86,7 @@ def __getNodes(tree, l):
         elif leaf.shape[0] > 1:
             raise AssertionError('Multiple leaves in list.')
 
-        node = regexer.Node(branch_node[l], code=leafCode, deep=l)
+        node = regexer.TreeNode(branch_node[l], code=leafCode, deep=l)
 
         childnodes = None
         if l+1 < maxLevel:
@@ -114,23 +101,23 @@ def __getNodes(tree, l):
     return nodes
 
 if __name__ == '__main__':
+    psl = PSLRegex()
+    psl.init(download=False, update=False)
 
+    # regex = regexer.getRegexes(df_etld=psl.etld.frame[(psl.etld.frame.suffix.str[-5:] == 'co.uk')])
+    regex = regexer.getRegexes(df_etld=psl.etld.frame)
 
-    tree = regexer.Node('root', deep=-1)
-
-    psl = PSLRegex(dir=dir)
-
-    psl.init(download=False, update=True,)
+    print(regex['uk'].pattern)
     
     # __test_asterisk()
 
-    sfx = regexer.invertedSuffixLabels(psl.etld.frame).iloc[:-2] # remove ukw and none
+    # sfx = regexer.invertedSuffixLabels(psl.etld.frame).iloc[:-2] # remove ukw and none
 
-    nodes = __getNodes(sfx[sfx[0] == 'com'], 0)
+    # nodes = __getNodes(sfx[sfx[0] == 'com'], 0)
 
-    nodes[0].print2()
+    # nodes[0].print2()
 
-    regex = __regex(nodes[0])
+    # regex = __regex(nodes[0])
     print()
     print(regex)
     print()

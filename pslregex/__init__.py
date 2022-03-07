@@ -7,7 +7,7 @@ import numpy as np
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from pslregex.regexer import getRegexes
+from pslregex.regexer import getRegexes, invertedSuffixLabels
 from pslregex.etld import ETLD
 
 from pslregex.etld import codes, inv_codes
@@ -45,17 +45,23 @@ class PSLRegex:
 
         ukwRow = [ '--' ] * self.etld.frame.shape[1]
         ukwRow[0] = self.etld.frame.shape[0]
-        ukwRow[-2] = 'ukw'
-        ukwRow[-1] = 0
+        ukwRow = [
+            'ukw', 'ukw', '--', '--', '--', '--', '--', False, False
+        ]
         self.ukwIndex = self.etld.frame.shape[0]
         self.etld.frame.loc[self.etld.frame.shape[0]] = ukwRow
 
         noneRow = [ '--' ] * self.etld.frame.shape[1]
         noneRow[0] = self.etld.frame.shape[0]
-        noneRow[-2] = 'none'
-        noneRow[-1] = 0
+        noneRow = [
+            'none', 'none', '--', '--', '--', '--', '--', False, False
+        ]
         self.noneIndex = self.etld.frame.shape[0]
         self.etld.frame.loc[self.etld.frame.shape[0]] = noneRow
+
+
+        self.np = self.etld.frame.to_numpy()
+        self.list = self.etld.frame.values.tolist()
 
         pass
 
@@ -75,16 +81,28 @@ class PSLRegex:
 
 
     def single(self, dn, onlytld=False, not_private=False):
-        start = time.time()
 
         dn = dn.split('.')[::-1]
         m = self.match((dn[0], '.'.join(dn)), onlytld=onlytld, not_private=not_private)
-        print(m)
-        suffix = self.etld.frame.iloc[m]
-        end = time.time() - start
+        suffix = [ self.list[mm] for mm in m ]
 
-        if self.print_perf:
-            print(f'Found 1 solution/s in {end} sec')
+        # # df = self.etld.frame.to_numpy()
+        # # start = time.time()
+        # a = time.time()
+        # dn = dn.split('.')[::-1]
+        # m = self.match((dn[0], '.'.join(dn)), onlytld=onlytld, not_private=not_private)
+        # a = time.time() - a
+
+        # print(a)
+        
+        
+        # a = time.time()
+        # a = time.time() - a
+        # print(a)
+        # # end = time.time() - start
+
+        # # if self.print_perf:
+        # #     print(f'Found 1 solution/s in {end} sec')
         
         return suffix
 
@@ -104,7 +122,6 @@ class PSLRegex:
             'pvt': self.etld.frame[cols].iloc[pvt]
         }
 
-        keys = []
         for a in df:
             df[a].index = df[a].reset_index().index
 
@@ -139,19 +156,32 @@ class PSLRegex:
 if __name__ == '__main__':
     psl = PSLRegex()
 
-    psl.init(False)
+    psl.init(download=False, update=False)
 
-    print(psl.etld.frame)
-
-    single = psl.single('google.co.uk')
+    df = psl.etld.frame
+    a = time.time()
+    single = psl.single('www.example.co.')
+    a = time.time() - a
+    print(a)
     print(single)
 
-    datasetFrame = pd.read_csv('/home/princio/Desktop/malware_detection/nn/nn/dataset_training.csv').iloc[0:1_000]
-    datasetFrame['tld'] = datasetFrame.dn.apply(lambda dn: dn[1 + dn.rfind('.'):])
+    df = psl.etld.frame
+    df = df[(df.tld == 'com')]
 
-    frame = psl.merge(datasetFrame)
+    dfinv = invertedSuffixLabels(df)
 
-    print(single)
-    print(frame)
+    regexes = getRegexes(df[(dfinv[1].str[0] == '') | (dfinv[1].str[0] == '0') | (dfinv[1].str[0] == 'e')])
+
+    print(regexes['com'].pattern)
+
+    # print('\n', psl.regexes['uk'].pattern, '\n')
+
+    # datasetFrame = pd.read_csv('/home/princio/Desktop/malware_detection/nn/nn/dataset_training.csv').iloc[0:1_000]
+    # datasetFrame['tld'] = datasetFrame.dn.apply(lambda dn: dn[1 + dn.rfind('.'):])
+
+    # frame = psl.merge(datasetFrame)
+
+    # print(single)
+    # print(frame)
 
     pass

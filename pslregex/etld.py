@@ -232,6 +232,8 @@ class ETLD:
             df['origin'] = 'both'
             df['origin'] = df.origin.where(~df.index_icann.isna(), 'PSL')
             df['origin'] = df.origin.where(~df.index_psl.isna(), 'icann')
+            df['punycode'] = df.punycode_icann.where(~df.punycode_icann.isna(), 'icann')
+            df['punycode'] = df.punycode_psl.where(~df.punycode_psl.isna(), df.punycode_psl[~df.punycode_psl.isna()])
 
             df['section'] = df['type_psl'].where(~(df['type_psl'] == 'icann'), 'icann')
             df['section'] = df['type_psl'].where(~(df['type_psl'] == 'new-icann'), 'icann')
@@ -251,9 +253,9 @@ class ETLD:
                 + df['exception'].apply(lambda e: 'e' if e else 'd') \
                 + df['suffix'].str.count('\.').astype(str)
 
-            df = df[['code', 'suffix', 'tld', 'type', 'origin', 'section', 'newGLTD', 'exception']]
+            df = df[['code', 'suffix', 'tld', 'punycode', 'type', 'origin', 'section', 'newGLTD', 'exception']]
             
-            return df
+            return df.copy()
         
         self.frame = parse()
 
