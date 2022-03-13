@@ -8,7 +8,7 @@ import json
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from pslregex.regexer import invertedSuffix, invertedSuffixLabels, group_by_n_l
+from pslregex.regexer import invertedSuffix, invertedSuffixLabels, group_by_n_l, parseNode
 from pslregex.etld import ETLD
 
 from pslregex.etld import codes, inv_codes
@@ -180,6 +180,11 @@ if __name__ == '__main__':
 
     with open(f'group.{_tld}.json', 'w') as f:
         json.dump(nodes, f, indent=4)
+
+    regex = parseNode('', nodes, -1)
+
+    with open(f'ff.{_tld}.txt', 'w') as f:
+        f.write(regex)
 
     dfinv = invertedSuffixLabels(df)
 

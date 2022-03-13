@@ -69,7 +69,7 @@ def group_by_n_l(df, l):
 
     branches = branches.sort_values(by='group', ignore_index=True)
 
-    branches['nn'] = branches.n // 5
+    branches['nn'] = branches.index
 
     subgroups = branches.groupby('nn').agg({ 'group': lambda x: list(x), 'suffix': lambda x: list(x), 'code': lambda x: list(x) })
 
