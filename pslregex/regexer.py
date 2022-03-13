@@ -68,8 +68,6 @@ def group_by_n_l(df, l):
 
     subgroups = branches.groupby('n').agg({ 'group': lambda x: list(x), 'suffix': lambda x: list(x), 'code': lambda x: list(x) })
 
-    print(subgroups)
-    
     nodes = {}
     for n, subgroup in subgroups.iterrows():
         subnodes = {}
@@ -229,7 +227,7 @@ if __name__ == "__main__":
         r_branches = '|'.join([ parseNode(branch[0], branch[1], l+2) for branch in branches ])
 
         if l == -1:
-            return f'^\n{r_branches}\n(?:[^\.]+)(?:\.[^\.]*)*$'
+            return f'^{r_branches}\n(?:[^\.]+)(?:\.[^\.]*)*$'
 
         if r_branches != '':
             r_branches = f'(?:{r_branches}'
