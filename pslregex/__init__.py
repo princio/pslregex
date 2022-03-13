@@ -167,7 +167,10 @@ if __name__ == '__main__':
     print(single)
 
     df = psl.etld.frame
-    df = df[df.tld == 'uk']
+    
+    _tld = 'uk'
+
+    df = df[df.tld == _tld]
 
     dfi = invertedSuffix(df)
 
@@ -175,7 +178,7 @@ if __name__ == '__main__':
 
     nodes = { nodes[0]: nodes[1] }
 
-    with open('group.uk.json', 'w') as f:
+    with open(f'group.{_tld}.json', 'w') as f:
         json.dump(nodes, f, indent=4)
 
     dfinv = invertedSuffixLabels(df)
