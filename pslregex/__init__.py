@@ -4,6 +4,7 @@ import time
 import json
 import os, re
 import numpy as np
+import json
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
@@ -169,7 +170,6 @@ if __name__ == '__main__':
     df = df[df.tld == 'uk']
 
     dfi = invertedSuffix(df)
-    import json
 
     nodes = group_by_n_l(dfi.set_index('code', drop=False), 0)
 

@@ -43,53 +43,16 @@ def group_by_n_l(df, l):
 
         if prewords.drop_duplicates().shape[0] > 1:
             raise AssertionError('Multiple prewords should be impossible')
-            
+        
         preword = prewords.drop_duplicates().iloc[0]
 
         branches = get_branches(df, k)
-
-        # endpoint = branches[branches['group'] == '']
-
-        # if endpoint.shape[0] > 1:
-        #     raise AssertionError('Multiple endpoints should be impossible.')
-        
-        # if endpoint.shape[0] == 1:
-        #     print(endpoint)
-        #     endpoint = endpoint.iloc[0].to_dict()
-
-        #     if endpoint['n'] > 1:
-        #         raise AssertionError('Endpoint should be unique.')
-
-        #     branches = branches[branches['group'] != '']
-            
-        #     nodes = {
-        #         '': {
-        #             'suffix': df.loc[endpoint['code'][0], 'suffix'],
-        #             'code': endpoint['code'][0]
-        #         }
-        #     }
-        #     child_nodes = group_by_n_l(df[~(df.index == endpoint['code'][0])], k-1)
-        #     for cpreword in child_nodes:
-        #         nodes[cpreword] = child_nodes[cpreword]
-        #     return { preword: nodes }
 
         if branches.shape[0] == 1:
             k += 1
             continue
         
-        # b = branches.shape[0]
-        # j = k + 1
-        # if amazonaws:
-        #     while branches.shape[0] == b:
-        #         b2 = get_branches(df, j)
-        #         b = b2.shape[0]
-        #         pass
-
         break
-
-    # This is not and endpoint
-    
-    nodes = {}
 
     is_node = False
     node = branches[branches['group'] == '']
@@ -103,19 +66,39 @@ def group_by_n_l(df, l):
         branches = branches[branches['group'] != '']
         pass
 
-    df_endpoints = branches[branches['n'] == 1]
-    for _, endpoint in df_endpoints.iterrows():
-        nodes[endpoint['group'] + endpoint['suffix'][0]] = df.loc[endpoint['code'][0]].to_dict()
+    subgroups = branches.groupby('n').agg({ 'group': lambda x: list(x), 'suffix': lambda x: list(x), 'code': lambda x: list(x) })
+
+    print(subgroups)
+    
+    nodes = {}
+    for n, subgroup in subgroups.iterrows():
+        subnodes = {}
+        if len(subgroup['group']) == 1 and len(subgroup['suffix'][0]) == 1:
+            subnodes = nodes
+        else:
+            tmp = '@' + ''.join(subgroup['group'])
+            nodes[tmp] = {}
+            subnodes = nodes[tmp]
+        for i in range(len(subgroup['group'])):
+
+            _group = subgroup['group'][i]
+            _suffixes = subgroup['suffix'][i]
+            _codes = subgroup['code'][i]
+
+            if n == 1:
+                subnodes[_group + _suffixes[0]] = df.loc[_codes[0]].to_dict()
+                continue
+
+            _pw, _ns = group_by_n_l(df.loc[_codes], k-1)
+            subnodes[_pw] = {}
+            for _n in _ns:
+                subnodes[_pw][_n] = _ns[_n]
+            pass
+        pass
+    
         pass
 
-    branches = branches[branches['n'] > 1]
-    for _, branch in branches.iterrows():
-        _pw, _ns = group_by_n_l(df.loc[branch['code']], k-1)
-        nodes[_pw] = {}
-        for _n in _ns:
-            nodes[_pw][_n] = _ns[_n]
-        pass
-
+    
     
     if is_node:
         nodes[''] = node
@@ -200,19 +183,27 @@ if __name__ == "__main__":
         return '(?P<{code}>{word})'.format(code=node['code'], word=convertWord(word))
 
     def ind_(l):
-        return  '\n' + '    ' * l
+        return  '\n' + '  ' * l
 
     
     # leaf is a named capturing group
     # branch is a non-capturing group that could start with a leaf
 
     def parseNode(word, node, l):
-        s = ''
-        h = l*3
+        h = l
 
+        ind0 = ind_(h)
         ind1 = ind_(h+1)
         ind2 = ind_(h+2)
-        ind3 = ind_(h+3)
+
+        gl = ''
+        if len(word) > 0 and word[0] == '@':
+            tmp = word[1:]
+            tmp = tmp if len(tmp) == 1 else f'[{tmp}]'
+            return f'{ind0}(?={tmp})' + f'{ind1}(?:' + f'{ind1}|'.join([ parseNode(w, node[w], l+2) for w in node ]) + f'{ind0})'
+        
+        if isLeaf(node):
+            return parseLeaf(word, node)
 
         branches = getBranches(node)
         leaves = getLeaves(node)
@@ -223,7 +214,7 @@ if __name__ == "__main__":
         if nb == 0 and nl == 1 and not hasLeafBranch(node):
             raise AssertionError('If there are no branches, should be at least more than one leaf.')
 
-        r_word = parseBegin(word, node)
+        r_word = gl + parseBegin(word, node)
 
         if hasLeafBranch(node):
             print(node['']['code'] + '\t' + node['']['suffix'])
@@ -235,28 +226,29 @@ if __name__ == "__main__":
         if r_leaves != '':
             r_leaves = f'{r_leaves}'
 
-        r_branches = '|'.join([ parseNode(branch[0], branch[1], l+1) for branch in branches ])
+        r_branches = '|'.join([ parseNode(branch[0], branch[1], l+2) for branch in branches ])
 
         if l == -1:
             return f'^\n{r_branches}\n(?:[^\.]+)(?:\.[^\.]*)*$'
 
         if r_branches != '':
-            r_branches = f'(?:{ind3}{r_branches}'
+            r_branches = f'(?:{r_branches}'
             if hasLeafBranch(node):
-                r_branches += f'{ind2}|)'
+                r_branches += f'{ind1}|)'
             else:
-                r_branches += f'{ind2})'
+                r_branches += f'{ind1})'
         
         if r_leaves == '' and r_branches == '':
-            return r_word
+            return f'{ind0}{r_word}'
 
         if r_leaves == '' and r_branches != '':
-            return f'{r_word}{ind1}{r_branches}'
+            return f'{ind0}{r_word}{ind1}{r_branches}'
 
         if r_leaves != '' and r_branches == '':
-            return f'{r_word}{ind1}{r_leaves}'
+            return f'{ind0}{r_word}{ind1}{r_leaves}'
 
-        return f'{r_word}(?:{ind2}{r_leaves}{ind2}|{r_branches}{ind1})'
+        print('ciao')
+        return f'{ind0}{r_word}{ind1}(?:{ind2}{r_leaves}{ind2}|{r_branches}{ind1})'
         
     regex = parseNode('', nodes, -1)
 
