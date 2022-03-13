@@ -7,7 +7,7 @@ import numpy as np
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from pslregex.regexer import getRegexes, invertedSuffixLabels
+from pslregex.regexer import invertedSuffix, invertedSuffixLabels, group_by_n_l
 from pslregex.etld import ETLD
 
 from pslregex.etld import codes, inv_codes
@@ -160,19 +160,43 @@ if __name__ == '__main__':
 
     df = psl.etld.frame
     a = time.time()
-    single = psl.single('www.example.co.')
+    single = psl.single('www.example.com')
     a = time.time() - a
     print(a)
     print(single)
 
     df = psl.etld.frame
-    df = df[(df.tld == 'com')]
+    df = df[df.tld == 'uk']
+
+    dfi = invertedSuffix(df)
+    import json
+
+    nodes = group_by_n_l(dfi.set_index('code', drop=False), 0)
+
+    nodes = { nodes[0]: nodes[1] }
+
+    with open('group.uk.json', 'w') as f:
+        json.dump(nodes, f, indent=4)
 
     dfinv = invertedSuffixLabels(df)
 
-    regexes = getRegexes(df[(dfinv[1].str[0] == '') | (dfinv[1].str[0] == '0') | (dfinv[1].str[0] == 'e')])
+    def pp(nodes, l):
+        print(','.join(nodes.keys()))
 
-    print(regexes['com'].pattern)
+        for node in nodes:
+            if 'suffix' in nodes[node]:
+                print(' ' * 4 * l, f'"{node}"', ' | ', nodes[node]['suffix'])
+            else:
+                print(' ' * 4 * l, f'"{node}":', end='')
+                pp(nodes[node], l+1)
+
+    pp(nodes, 0)
+
+
+# com.linode.members
+
+    # print(regexes['com'].pattern)
+    print()
 
     # print('\n', psl.regexes['uk'].pattern, '\n')
 
