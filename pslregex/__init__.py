@@ -50,7 +50,10 @@ class PSLdict:
         return d
 
     def match(self, dn):
-        ds = []
+        ds = {
+            'icann': None,
+            'private': None
+        }
         # b = time.time()
         idn = '.'.join(dn.split('.')[::-1])
         d = self.dicter[idn[0]]
@@ -63,28 +66,32 @@ class PSLdict:
             
         for i, l in enumerate(labels):
             # b = time.time()
-            d_ = d.get(l)
-            if d_ is None:
+            suffix = d.get(l)
+            if suffix is None:
                 if len(labels)-1 > i:
-                    ds.append((d.get('*'), i))
+                    suffix = d.get('*')
+                    if suffix is not None:
+                        ds[suffix['@isprivate']] = _d(suffix, i)
                     # print('78', time.time() - b)
                     break
-            elif '@code' in d_:
-                ds.append((d_, i))
+            elif '@code' in suffix:
+                ds[suffix['@isprivate']] = _d(suffix, i)
                 # print('73', time.time() - b)
                 break
             else:
-                ds.append((d_.get(''), i))
+                suffix2 = suffix.get('')
+                if suffix2 is not None:
+                    ds[suffix2['@isprivate']] = _d(suffix2, i)
                 # print('70', time.time() - b)
-                d = d_
+                d = suffix
                 pass
             pass
 
         # b = time.time()
-        a =  [ _d(d[0], d[1]) for d in ds if d[0] is not None ]
+       # a =  [ _d(d[0], d[1]) for d in ds if d[0] is not None ]
         # print('84', time.time() - b)
 
-        return a
+        return ds
     
     # end of PSLdict
     pass
@@ -94,9 +101,9 @@ if __name__ == '__main__':
 
     psl.init(download=False, update=False)
 
-    dn = 'ciao.asterisk.compute-1.amazonaws.com'
     dn = 'www.example.com'
     dn = 'ciao.issmarterthanyou.com'
+    dn = 'ciao.asterisk.compute-1.amazonaws.com'
 
     df = psl.etld.frame
     a = time.time()
