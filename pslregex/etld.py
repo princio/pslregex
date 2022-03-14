@@ -41,6 +41,17 @@ class ETLD:
         self.frame = None
         pass
 
+    def iframe(self):
+        dfi = pd.DataFrame(self.frame.suffix.str.split('.').apply(lambda x: x[::-1]).to_list(), index=self.frame.index).fillna('')
+        dfi['suffix'] = self.frame['suffix']
+        dfi['code'] = self.frame['code']
+        dfi['punycode'] = self.frame['punycode']
+        dfi['type'] = self.frame['type']
+        dfi['origin'] = self.frame['origin']
+        dfi['section'] = self.frame['section']
+        
+        return dfi.sort_values(by=dfi.columns.tolist()).copy()
+
     def init(self, download=False, update=False):
 
         if not update and os.path.exists(os.path.join(self.dir, 'etld.csv')):

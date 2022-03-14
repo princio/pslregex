@@ -20,8 +20,31 @@ def dicter(df, l):
                 dd[k[0]][k] = d[k]
             d = dd
 
-
     return d
+
+def match(dn):
+    ds = []
+    idn = '.'.join(dn.split('.')[::-1])
+    labels = idn.split('.')
+
+    def _d(d):
+        d['@dn-suffix'] = '.'.join(labels[i+1:][::-1])
+        return { k[1:]: d[k] for k in d }
+        
+    for i, l in enumerate(labels):
+        try:
+            d = d[l]
+            if '' in d:
+                ds.append(_d(d[''], i))
+            elif '@code' in d:
+                ds.append(_d(d, i))
+                break
+        except KeyError as e:
+            if len(labels)-1 > i and '*' in d:
+                ds.append(_d(d['*'], i))
+            break
+        pass
+    return ds
     
 
 
