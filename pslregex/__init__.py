@@ -8,10 +8,10 @@ import json
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
+from pslregex.dicter import dicter
 from pslregex.regexer import invertedSuffix, invertedSuffixLabels, group_by_n_l, parseNode
 from pslregex.etld import ETLD
 
-from pslregex.etld import codes, inv_codes
 
 DIR = os.path.dirname(__file__)
 
@@ -168,11 +168,16 @@ if __name__ == '__main__':
 
     df = psl.etld.frame
     
-    _tld = 'uk'
+    _tld = 'all'
 
-    df = df[df.tld == _tld]
+    # df = df[df.tld == _tld]
 
-    dfi = invertedSuffix(df)
+    dfi = invertedSuffixLabels(df)
+
+    dicter_ = dicter(dfi, 0)
+
+    with open(f'dicter.{_tld}.json', 'w') as f:
+        json.dump(dicter_, f, indent=4)
 
     nodes = group_by_n_l(dfi.set_index('code', drop=False), 0)
 

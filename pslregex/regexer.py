@@ -106,17 +106,15 @@ def group_by_n_l(df, l):
     
     return preword, nodes
 
-def invertedSuffixLabels(df_etld):
-    sfx = df_etld.suffix.copy()
-    maxLabels_suffix = sfx.str.count('\.').max()
-    sfx = sfx.apply(lambda s: ('@@.'*(maxLabels_suffix - s.count('.'))) + s).str.split('.', expand=True)
-    sfx = sfx[sfx.columns[::-1]]
-    sfx = sfx.replace('@@', '')
-    for col in range(len(sfx.columns), MAXLEVEL+1):
-        sfx[col] = ''
-    sfx.columns = pd.Index(list(range((MAXLEVEL+1))))
-    sfx['code'] = df_etld['code']
-    return sfx.copy()
+def invertedSuffixLabels(df):
+    df__ = pd.DataFrame(df.suffix.str.split('.').apply(lambda x: x[::-1]).to_list(), index=df.index).fillna('')
+    df__['suffix'] = df['suffix']
+    df__['code'] = df['code']
+    df__['punycode'] = df['punycode']
+    df__['type'] = df['type']
+    df__['origin'] = df['origin']
+    df__['section'] = df['section']
+    return df__.sort_values(by=df__.columns.tolist()).copy()
 
 
 def invertedSuffix(df_etld):
