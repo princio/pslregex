@@ -30,13 +30,17 @@ class PSLdict:
 
         pass
 
-
     def __dicter(self, df, l):
         if df.shape[0] == 1:
             d = df.iloc[0].fillna('').to_dict()
             d = { f'@{k}': d[k] for k in d if not isinstance(k, int) and d[k] != '' }
-            if l < 4 and df.iloc[0][l] != '':
-                d = { df.iloc[0][l]: d }
+            k = l
+            keys = []
+            while ((k) in df.columns and df[k].iloc[0] != ''):
+                keys += [ df[k].iloc[0] ]
+                k += 1
+            for key in keys[::-1]:
+                d = { key: d }
         else:
             d = { k: self.__dicter(df[df[l] == k], l+1) for k in df[l].drop_duplicates() }
             if l == 0:
@@ -99,7 +103,7 @@ class PSLdict:
 if __name__ == '__main__':
     psl = PSLdict()
 
-    psl.init(download=False, update=False)
+    psl.init(download=False, update=True)
 
     dn = 'www.example.com'
     dn = 'ciao.issmarterthanyou.com'
