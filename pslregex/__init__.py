@@ -58,47 +58,43 @@ class PSLdict:
             'icann': None,
             'private': None
         }
-        # b = time.time()
+        if dn is None or len(dn) == 0:
+            return ds
+
+        if dn[0] == '.' or dn[-1] == '.' or dn.find('..') >= 0:
+            return ds
+
+        dn = dn.lower()
         idn = '.'.join(dn.split('.')[::-1])
         d = self.dicter[idn[0]]
         labels = idn.split('.')
-        # print('58', time.time() - b)
 
         def _d(d, i):
             d['@dn-suffix'] = '.'.join(labels[len(labels):i:-1])
             return { k[1:]: d[k] for k in d }
             
         for i, l in enumerate(labels):
-            # b = time.time()
             suffix = d.get(l)
             if suffix is None:
                 if len(labels)-1 > i:
                     suffix = d.get('*')
                     if suffix is not None:
                         ds[suffix['@isprivate']] = _d(suffix, i)
-                    # print('78', time.time() - b)
                     break
             elif '@code' in suffix:
                 ds[suffix['@isprivate']] = _d(suffix, i)
-                # print('73', time.time() - b)
                 break
             else:
                 suffix2 = suffix.get('')
                 if suffix2 is not None:
                     ds[suffix2['@isprivate']] = _d(suffix2, i)
-                # print('70', time.time() - b)
                 d = suffix
                 pass
             pass
 
-        # b = time.time()
-       # a =  [ _d(d[0], d[1]) for d in ds if d[0] is not None ]
-        # print('84', time.time() - b)
-
         return ds
     
-    # end of PSLdict
-    pass
+    pass # end of PSLdict
 
 if __name__ == '__main__':
     psl = PSLdict()
