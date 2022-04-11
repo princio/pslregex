@@ -156,8 +156,9 @@ class ETLD:
             
             df = df_iana.merge(df_tldlist, on=[ 'tld', 'type' ], how='outer', suffixes=('_iana', '_tldlist'))
             
-            print(f'IANA tlds not present in TLDLIST: {df[df.index_iana.isna()].shape[0]}')
-            print(f'TLDLIST tlds not present in IANA: {df[df.index_tldlist.isna()].shape[0]}')
+            # TODO: verbose variable
+            # print(f'IANA tlds not present in TLDLIST: {df[df.index_iana.isna()].shape[0]}')
+            # print(f'TLDLIST tlds not present in IANA: {df[df.index_tldlist.isna()].shape[0]}')
             
             df = df.drop(columns=[ 'index_iana', 'index_tldlist' ]).fillna('-')
             df = df.sort_values(by='tld').reset_index()
@@ -228,8 +229,9 @@ class ETLD:
 
             df = df_icann.merge(df_psl, on='tld', how='outer', suffixes=('_icann', '_psl'))
 
-            print(f'ICANN tlds not present in PSL: {df[df.index_icann.isna()].shape[0]}')
-            print(f'PSL tlds not present in ICANN: {df[df.index_psl.isna()].shape[0]}')
+            # TODO: verbose variable
+            # print(f'ICANN tlds not present in PSL: {df[df.index_icann.isna()].shape[0]}')
+            # print(f'PSL tlds not present in ICANN: {df[df.index_psl.isna()].shape[0]}')
 
             df = df[['suffix', 'tld', 'punycode_icann', 'punycode_psl', 'type_icann', 'type_psl', 'index_icann', 'index_psl' ]]
 
