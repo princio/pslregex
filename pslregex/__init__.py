@@ -61,11 +61,13 @@ class PSLdict:
         if dn is None or len(dn) == 0:
             return ds
 
-        if dn[0] == '.' or dn[-1] == '.' or dn.find('..') >= 0:
+        if dn[0] == '.' or dn[-1] == '.' or dn.find('..') >= 0 or len(dn) < 3:
             return ds
 
         dn = dn.lower()
         idn = '.'.join(dn.split('.')[::-1])
+        if idn[0] not in self.dicter:
+            return ds
         d = self.dicter[idn[0]]
         labels = idn.split('.')
 
