@@ -98,6 +98,11 @@ class PSLdict:
     
     pass # end of PSLdict
 
+def init():
+    psl = PSLdict()
+    psl.init(download=True, update=True)
+    pass
+
 if __name__ == '__main__':
     psl = PSLdict()
 
