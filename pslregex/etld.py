@@ -41,6 +41,18 @@ class ETLD:
         self.frame = None
         pass
 
+    def iframe(self):
+        dfi = pd.DataFrame(self.frame.suffix.str.split('.').apply(lambda x: x[::-1]).to_list(), index=self.frame.index).fillna('')
+        dfi['suffix'] = self.frame['suffix']
+        dfi['code'] = self.frame['code']
+        dfi['punycode'] = self.frame['punycode']
+        dfi['type'] = self.frame['type']
+        dfi['origin'] = self.frame['origin']
+        dfi['section'] = self.frame['section']
+        dfi['isprivate'] = self.frame['isprivate']
+        
+        return dfi.sort_values(by=dfi.columns.tolist()).copy()
+
     def init(self, download=False, update=False):
 
         if not update and os.path.exists(os.path.join(self.dir, 'etld.csv')):
@@ -105,38 +117,38 @@ class ETLD:
             return df
 
         def parseICANN():
-            import json
+            # import json
 
-            with open('./country-json/src/country-by-domain-tld.json') as json_file:
-                cc_tld = {}
-                for line in json.load(json_file):
-                    if line['tld'] is not None:
-                        cc_tld[line['tld'].replace('.', '')] = line['country']
+            # with open('./country-json/src/country-by-domain-tld.json') as json_file:
+            #     cc_tld = {}
+            #     for line in json.load(json_file):
+            #         if line['tld'] is not None:
+            #             cc_tld[line['tld'].replace('.', '')] = line['country']
             
-            cc_tld['ac'] = 'Ascension Island'
-            cc_tld['ax'] = 'Åland Islands'
-            cc_tld['bl'] = 'Collectivité territoriale de Saint-Barthélemy'
-            cc_tld['bq'] = 'Caribbean Netherlands'
-            cc_tld['cw'] = 'Curaçao'
-            cc_tld['eu'] = 'Europe'
-            cc_tld['fm'] = 'Federated States of Micronesia'
-            cc_tld['fo'] = 'Faroe Islands'
-            cc_tld['gg'] = 'Bailiwick of Guernsey'
-            cc_tld['je'] = 'Jersey'
-            cc_tld['im'] = 'Isle of Man'
-            cc_tld['me'] = 'Montenegro'
-            cc_tld['mf'] = 'Collectivity of Saint Martin'
-            cc_tld['su'] = 'Russian Federation'
-            cc_tld['sx'] = 'Sint Maarten'
-            cc_tld['tp'] = 'retired'
-            cc_tld['tw'] = 'Taiwan'
-            cc_tld['uk'] = 'United Kingdom'
-            cc_tld['um'] = 'United States Minor Outlying Islands'
-            cc_tld['ελ'] = 'Greece'
-            cc_tld['ευ'] = 'Greece'
-            cc_tld['бг'] = 'Bulgaria'
-            cc_tld['бел'] = 'Belarus'
-            cc_tld[''] = ''
+            # cc_tld['ac'] = 'Ascension Island'
+            # cc_tld['ax'] = 'Åland Islands'
+            # cc_tld['bl'] = 'Collectivité territoriale de Saint-Barthélemy'
+            # cc_tld['bq'] = 'Caribbean Netherlands'
+            # cc_tld['cw'] = 'Curaçao'
+            # cc_tld['eu'] = 'Europe'
+            # cc_tld['fm'] = 'Federated States of Micronesia'
+            # cc_tld['fo'] = 'Faroe Islands'
+            # cc_tld['gg'] = 'Bailiwick of Guernsey'
+            # cc_tld['je'] = 'Jersey'
+            # cc_tld['im'] = 'Isle of Man'
+            # cc_tld['me'] = 'Montenegro'
+            # cc_tld['mf'] = 'Collectivity of Saint Martin'
+            # cc_tld['su'] = 'Russian Federation'
+            # cc_tld['sx'] = 'Sint Maarten'
+            # cc_tld['tp'] = 'retired'
+            # cc_tld['tw'] = 'Taiwan'
+            # cc_tld['uk'] = 'United Kingdom'
+            # cc_tld['um'] = 'United States Minor Outlying Islands'
+            # cc_tld['ελ'] = 'Greece'
+            # cc_tld['ευ'] = 'Greece'
+            # cc_tld['бг'] = 'Bulgaria'
+            # cc_tld['бел'] = 'Belarus'
+            # cc_tld[''] = ''
                 
             df_iana = parseIANA()
             
@@ -144,15 +156,16 @@ class ETLD:
             
             df = df_iana.merge(df_tldlist, on=[ 'tld', 'type' ], how='outer', suffixes=('_iana', '_tldlist'))
             
-            print(f'IANA tlds not present in TLDLIST: {df[df.index_iana.isna()].shape[0]}')
-            print(f'TLDLIST tlds not present in IANA: {df[df.index_tldlist.isna()].shape[0]}')
+            # TODO: verbose variable
+            # print(f'IANA tlds not present in TLDLIST: {df[df.index_iana.isna()].shape[0]}')
+            # print(f'TLDLIST tlds not present in IANA: {df[df.index_tldlist.isna()].shape[0]}')
             
             df = df.drop(columns=[ 'index_iana', 'index_tldlist' ]).fillna('-')
             df = df.sort_values(by='tld').reset_index()
             
-            df['country'] = df.tld.apply(lambda tld: '-' if tld not in cc_tld else cc_tld[tld])
+            # df['country'] = df.tld.apply(lambda tld: '-' if tld not in cc_tld else cc_tld[tld])
             
-            return df[['index','tld','type','manager', 'sponsor','punycode','language code','translation','romanized','rtl', 'country']]
+            return df[['index','tld','type','manager', 'sponsor','punycode','language code','translation','romanized','rtl' ]] #, 'country']]
 
         def parsePSL():
             psl_lines = self.files['psl'].copy()
@@ -216,8 +229,9 @@ class ETLD:
 
             df = df_icann.merge(df_psl, on='tld', how='outer', suffixes=('_icann', '_psl'))
 
-            print(f'ICANN tlds not present in PSL: {df[df.index_icann.isna()].shape[0]}')
-            print(f'PSL tlds not present in ICANN: {df[df.index_psl.isna()].shape[0]}')
+            # TODO: verbose variable
+            # print(f'ICANN tlds not present in PSL: {df[df.index_icann.isna()].shape[0]}')
+            # print(f'PSL tlds not present in ICANN: {df[df.index_psl.isna()].shape[0]}')
 
             df = df[['suffix', 'tld', 'punycode_icann', 'punycode_psl', 'type_icann', 'type_psl', 'index_icann', 'index_psl' ]]
 
@@ -245,6 +259,9 @@ class ETLD:
             df['type'] = df['type'].where(~((df['type_icann'].isna()) & (df['section'] == 'icann')), 'generic')
             df['type'] = df['type'].where(~df['type_icann'].isna(), 'generic')
 
+            df['isprivate'] = 'icann'
+            df['isprivate'] = df['isprivate'].where(~(df['section'] == 'private-domain'), 'private')
+
             df = df.sort_values(by='suffix').reset_index(drop=True).reset_index()
 
             df['code'] = df['section'].apply(lambda o: codes['section'][o]) \
@@ -253,7 +270,7 @@ class ETLD:
                 + df['exception'].apply(lambda e: 'e' if e else 'd') \
                 + df['suffix'].str.count('\.').astype(str)
 
-            df = df[['code', 'suffix', 'tld', 'punycode', 'type', 'origin', 'section', 'newGLTD', 'exception']]
+            df = df[[ 'code', 'suffix', 'tld', 'punycode', 'type', 'origin', 'section', 'newGLTD', 'exception', 'isprivate' ]]
             
             return df.copy()
         

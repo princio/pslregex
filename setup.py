@@ -25,7 +25,7 @@ setup(name="pslregex",
           "Topic :: Text Processing :: Filters",
           "Operating System :: OS Independent",
         ],
-      python_requires=">=3.9.7",
+      python_requires=">=3.8.0",
       install_requires=[
           "pandas>=1.4.1",
           "requests>=2.24.0"

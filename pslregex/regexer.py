@@ -1,178 +1,250 @@
-import re, os
+import json
+from numpy import r_
 import pandas as pd
+import json
 
 def sl(l, indent=4, c=' '):
     return (l+1)*indent*c + f'{l}#'
 
 MAXLEVEL = 4
 
-class TreeNode:
-    def __init__(self, label, code=None, deep=0, singleLetter=False, parent=None, dn=None):
-        self.parent = parent
-        self.label = label
-        self.dn = dn
-        self.code = code
-        self.children = []
-        self.deep = deep
-        self.singleLetter = singleLetter
-        self._debug = os.environ.get('DEBUG')
+
+def get_branches(df, k):
+    branches = df.copy()
+
+    branches['group'] = df.suffix.str[k-1:k]
+    branches['n'] = 1
+
+    branches = branches.groupby('group').agg({
+        'n': 'sum',
+        'suffix': lambda x: list([ xx[k:] for xx in x ]),
+        'code': lambda x: list(x)
+    })
+    
+    branches = branches.sort_values(by='n', ascending=False)
+    
+    return branches.reset_index()
+
+def group_by_n_l(df, l):
+    if l == 0:
+        df.suffix = df.suffix + '.'
+
+    if df.shape[0] == 1:
+        endpoint = df.iloc[0].to_dict()
+        preword = endpoint['suffix'][l:]
+        return preword, {
+                'suffix': endpoint['suffix'],
+                'code': endpoint['code']
+            }
+
+    k=l+1
+    stop = 1 + df.suffix.str.len().min()
+    while k <= stop:
+        prewords = df.suffix.str[l:k-1]
+
+        if prewords.drop_duplicates().shape[0] > 1:
+            raise AssertionError('Multiple prewords should be impossible')
+        
+        preword = prewords.drop_duplicates().iloc[0]
+
+        branches = get_branches(df, k)
+
+        if branches.shape[0] == 1:
+            k += 1
+            continue
+        
+        break
+
+    is_node = False
+    node = branches[branches['group'] == '']
+    if node.shape[0] == 1:
+        node = df.loc[node.iloc[0]['code'][0]].to_dict()
+        is_node = True
+        node = {
+            'suffix': node['suffix'],
+            'code': node['code']
+        }
+        branches = branches[branches['group'] != '']
         pass
-    
-    def level(self):
-        i = 0 if self.parent is None else self.parent.level() + 1 + self.singleLetter
-        return i
-    
-    def add(self, label, code=None, singleLetter=False, dn=None):
-        childDeep = self.deep+1 if not self.singleLetter else self.deep
-        node = TreeNode(label, code=code, deep=childDeep, singleLetter=singleLetter, parent=self, dn=dn)
-        self.children.append(node)
-        return node
 
-    
-    def addChild(self, node):
-        node.parent = self
-        self.children.append(node)
-        return node
-    
-    def leaves(self):
-        _leafs = [self] if self.code is not None else []
-        for child in self.children:
-            _leafs += child.leaves()
-        return _leafs
-    
-    def allLeaf(self):
-        return all([child.isLeaf() for child in self.children])
-    
-    def isLeaf(self):
-        return self.code is not None
-    
-    def branch(self):
-        if self.parent is None:
-            return [ self ]
-        return [ self ] + self.parent.branch()
-    
-    def __getitem__(self, key):
-        return self.children[key]
-    
-    def compact(self):
-        if self.parent is not None:
-            while not self.singleLetter and len(self.children) == 1 and not self.isLeaf():
-                self.label = self.label + '\\.' + self[0].label
-                self.dn = self[0].dn
-                self.code = self[0].code
-                self.singleLetter = self[0].singleLetter
-                self.children = self[0].children
-        for child in self.children:
-            child.compact()
-    
-    def _print(self):
-        print((self.level() * '  ') + str(self))
-        for child in self.children:
-            child._print()
+    branches = branches.sort_values(by='group', ignore_index=True)
 
-    def print2(self):
-        print(f'{sl(self.deep)} {self.__str__()}')
-        for child in self.children:
-            child.print2()
-    
-    def __str__(self):
-            return f'{self.label}' + (f'[{self.code}]')
-    
-    def __repr__(self):
-        return self.__str__()
+    branches['nn'] = branches.n // 5
 
-    def regex(self):
-        regex_label = self.label.replace('*', '[^\\.]+')
-        regex_label += '\\.'
-        regex_label = regex_label if self.code is None else f'(?P<{self.code}>{regex_label})'
-        if len(self.children) == 0:
-            return regex_label
-        
-        fls = [ child.label[0] for child in self.children ]
-        fls = { fl: fls.count(fl) for fl in fls }
+    subgroups = branches.groupby('nn').agg({ 'group': lambda x: list(x), 'suffix': lambda x: list(x), 'code': lambda x: list(x) })
 
-        groups_per_letter = { fl: [] for fl in fls }
-        for child in self.children:
-            groups_per_letter[child.label[0]].append(child.regex())
-        
-        children_regexes = []
-        for fl in groups_per_letter:
-            if len(groups_per_letter[fl]) > 1:
-                child_regex = f'(?={fl})(?:' + '|'.join(groups_per_letter[fl]) + ')'
-            else:
-                child_regex = '|'.join(groups_per_letter[fl])
-            children_regexes.append(child_regex)
-        
-        if len(children_regexes) > 0:
-            tmp = '' if self.code is None else f'|'
-            regex = f'{regex_label}(?:{"|".join(children_regexes)}{tmp})'
+    nodes = {}
+    for n, subgroup in subgroups.iterrows():
+        subnodes = {}
+        if len(subgroup['group']) == 1:
+            subnodes = nodes
         else:
-            regex = regex_label
-        
-        # TODO: Check regex having one single node (i.e. the one with unusal tld like '.post')
-        if self.deep == 0:
-            regex = '^' + regex + '(?:[^\.]+)(?:\.[^\.]*)*$'
-        
-        return regex
-    
-    pass
+            tmp = '@' + ''.join(subgroup['group'])
+            nodes[tmp] = {}
+            subnodes = nodes[tmp]
+            pass
+        for i in range(len(subgroup['group'])):
 
+            _group = subgroup['group'][i]
+            _suffixes = subgroup['suffix'][i]
+            _codes = subgroup['code'][i]
 
-def __getNodes(tree, l):
-    if tree.shape[0] == 0:
-        return []
-    
-    treenodes = []
-    for node in tree[l].drop_duplicates():
+            if n == 1:
+                subnodes[_group + _suffixes[0]] = df.loc[_codes[0]].to_dict()
+                continue
 
-        branch = tree[(tree[l] == node)]
-
-        leaf = branch[branch[l+1] == '']
-        leafCode = None
-        if leaf.shape[0] == 1:
-            leafCode = leaf.iloc[0]['code']
-        elif leaf.shape[0] > 1:
-            print(leaf)
-            raise AssertionError('Multiple leaves in list.')
-
-        treenode = TreeNode(node, code=leafCode, deep=l)
-
-        childnodes = None
-        if l+1 < MAXLEVEL:
-            childnodes = __getNodes(branch[branch[l+1] != ''], l+1)
-            for childnode in childnodes:
-                treenode.addChild(childnode)
-        
-        treenodes.append(treenode)
-
+            _pw, _ns = group_by_n_l(df.loc[_codes], k-1)
+            subnodes[_pw] = {}
+            for _n in _ns:
+                subnodes[_pw][_n] = _ns[_n]
+            pass
         pass
+    
+    if is_node:
+        nodes[''] = node
+        nodes = { n: nodes[n] for n in sorted(nodes.keys()) }
+    
+    return preword, nodes
 
-    return treenodes
+def invertedSuffixLabels(df):
+    df__ = pd.DataFrame(df.suffix.str.split('.').apply(lambda x: x[::-1]).to_list(), index=df.index).fillna('')
+    df__['suffix'] = df['suffix']
+    df__['code'] = df['code']
+    df__['punycode'] = df['punycode']
+    df__['type'] = df['type']
+    df__['origin'] = df['origin']
+    df__['section'] = df['section']
+    return df__.sort_values(by=df__.columns.tolist()).copy()
 
 
-def invertedSuffixLabels(df_etld):
+def invertedSuffix(df_etld):
     sfx = df_etld.suffix.copy()
-    # sfx = df_etld.suffix.str.replace(r'*.', '', regex=False).copy()
-    maxLabels_suffix = sfx.str.count('\.').max()
-    sfx = sfx.apply(lambda s: ('@@.'*(maxLabels_suffix - s.count('.'))) + s).str.split('.', expand=True)
-    sfx = sfx[sfx.columns[::-1]]
-    sfx = sfx.replace('@@', '')
-    for col in range(len(sfx.columns), MAXLEVEL+1):
-        sfx[col] = ''
-    sfx.columns = pd.Index(list(range((MAXLEVEL+1))))
+    sfx = sfx.apply(lambda s: '.'.join(s.split('.')[::-1])).to_frame()
     sfx['code'] = df_etld['code']
     return sfx.copy()
 
+    
+def hasLeafBranch(node):
+    return '' in node and isLeaf(node[''])
 
-def getRegexes(df_etld):
-    sfx = invertedSuffixLabels(df_etld)
-    regexes = {}
-    tlds = sfx[0].drop_duplicates()
-    for tld in tlds:
-        nodes = __getNodes(sfx[sfx[0] == tld], 0)
-        if os.environ.get('DEBUG'):
-            regexes[tld] = re.compile(nodes[0].regex(), re.VERBOSE)
+def getLeafBranch(node):
+    return node[''] if hasLeafBranch(node) else None
+
+def isLeaf(node):
+    return len(list(node.keys())) == 2 and 'suffix' in node and 'code' in node
+
+def getLeaves(node):
+    return [ (word, node[word]) for word in node if isLeaf(node[word]) and word != '' ]
+
+def getBranches(node):
+    return [ (word, node[word]) for word in node if not isLeaf(node[word]) ]
+
+def getChildren(node):
+    return [ (word, node[word]) for word in node ]
+
+def nleaves(node, total=True):
+    if not total:
+        return sum([ 1 if isLeaf(child_node) else 0 for child_node in getChildren(node) ])
+    
+    if isLeaf(node):
+        return 1
+    nc = 0
+    for n in node:
+        nc += nleaves(node[n])
+    return nc
+
+
+def namedGroup(word, node):
+    return word[:-2] + '(?P<{code}>\\.)'.format(code=node['code'], suffix=word)
+
+def parseLeaf(word, node):
+    word = word.replace('.', '\\.').replace('*', '[^\\.]+')
+    return namedGroup(word, node)
+
+def parseBegin(word, node):
+    if isLeaf(node):
+        word = parseLeaf(word, node)
+    elif hasLeafBranch(node):
+        leafbranch = getLeafBranch(node)
+        word = parseLeaf(word, leafbranch)
+    
+    return word
+
+def ind_(l):
+    return  '\n' + '  ' * l
+
+
+# leaf is a named capturing group
+# branch is a non-capturing group that could start with a leaf
+
+def parseNode(word, node, l):
+    h = l
+
+    ind0 = ind_(h)
+    ind1 = ind_(h+1)
+    ind2 = ind_(h+2)
+
+    gl = ''
+    if len(word) > 0 and word[0] == '@':
+        tmp = word[1:] # remove @
+        tmp = tmp if len(tmp) == 1 else f'[{tmp}]'
+        return f'{ind0}(?={tmp})' + f'{ind1}(?:' + f'{ind1}|'.join([ parseNode(w, node[w], l+2) for w in node ]) + f'{ind0})'
+    
+    if isLeaf(node):
+        return parseLeaf(word, node)
+
+    branches = getBranches(node)
+    leaves = getLeaves(node)
+
+    nb = len(branches)
+    nl = len(leaves)
+
+    if nb == 0 and nl == 1 and not hasLeafBranch(node):
+        raise AssertionError('If there are no branches, should be at least more than one leaf.')
+
+    r_word = gl + parseBegin(word, node)
+
+    r_leaves = '|'.join([ parseLeaf(leaf[0], leaf[1]) for leaf in leaves ])
+
+    if r_leaves != '':
+        r_leaves = f'{r_leaves}'
+
+    r_branches = '|'.join([ parseNode(branch[0], branch[1], l+2) for branch in branches ])
+
+    if l == -1:
+        return f'^{r_branches}\n(?:[^\.]+)(?:\.[^\.]*)*$'
+
+    if r_branches != '':
+        r_branches = f'(?:{r_branches}'
+        if hasLeafBranch(node):
+            r_branches += f'{ind1}|)'
         else:
-            regexes[tld] = re.compile(nodes[0].regex())
-    return regexes
+            r_branches += f'{ind1})'
+    
+    if r_leaves == '' and r_branches == '':
+        return f'{ind0}{r_word}'
 
+    if r_leaves == '' and r_branches != '':
+        return f'{ind0}{r_word}{ind1}{r_branches}'
+
+    if r_leaves != '' and r_branches == '':
+        return f'{ind0}{r_word}{ind1}{r_leaves}'
+
+    return f'{ind0}{r_word}{ind1}(?:{ind2}{r_leaves}{ind2}|{r_branches}{ind1})'
+
+
+
+
+if __name__ == "__main__":
+
+    _tld = 'com'
+
+    with open(f'group.{_tld}.json', 'r') as f:
+        nodes = json.load(f)
+
+    regex = parseNode('', nodes, -1)
+
+    with open(f'ff.{_tld}.txt', 'w') as f:
+        f.write(regex)
+
+    pass
